@@ -56,12 +56,47 @@ The build expects modern toolchain components:
 
 ### Containerised Build
 
-To avoid managing host-side toolchain updates you can build the project inside the provided Docker image:
+Run the following commands from the `rewrite/` directory. Build both the runtime image (ships the `trx_compiler` entrypoint) and a separate toolchain image with CMake, Ninja, Flex, and Bison installed:
 
 ```
-docker build -t trx-rewrite:latest rewrite
-docker run --rm -v "$(pwd)":/workspace trx-rewrite:latest rewrite/examples/sample.trx
+docker build -t trx-rewrite .
+docker build --target builder -t trx-rewrite-dev .
 ```
 
-The resulting container exposes the `trx_compiler` binary as the entrypoint, so passing a path inside the bind-mounted workspace allows you to compile sources without installing dependencies locally.
+#### How to build
+
+Configure the project and compile it inside the toolchain image. This writes the artefacts to `build/` in your working tree:
+
+```
+docker run --rm -v "$PWD":/workspace --entrypoint bash trx-rewrite-dev \
+  -lc 'cmake -S /workspace -B /workspace/build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo && \
+       cmake --build /workspace/build'
+```
+
+#### How to test
+
+Re-use the configured build directory and drive CTest from within the same image:
+
+```
+docker run --rm -v "$PWD":/workspace --entrypoint bash trx-rewrite-dev \
+  -lc 'cd /workspace/build && ctest --output-on-failure'
+```
+
+#### How to run
+
+Invoke the runtime image (whose entrypoint is `trx_compiler`) and pass it a TRX source file inside the mounted workspace:
+
+```
+docker run --rm -v "$PWD":/workspace trx-rewrite /workspace/examples/sample.trx
+```
+
+The compiler reports diagnostics or success without requiring any host-side dependencies beyond Docker.
+
+## Continuous Integration
+
+Pushes and pull requests targeting `main` trigger a GitHub Actions workflow that:
+
+- Builds with warnings promoted to errors to provide lightweight linting.
+- Builds and tests the project via CTest on an Ubuntu runner.
+- Builds both the runtime and toolchain Docker images to ensure container definitions stay valid.
 # trx

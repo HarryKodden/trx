@@ -40,6 +40,32 @@ inline trx::ast::VariableExpression *variableFrom(void *ptr) {
     return static_cast<trx::ast::VariableExpression *>(ptr);
 }
 
+inline trx::ast::VariableExpression *variableFromPath(char *raw) {
+    auto variable = new trx::ast::VariableExpression();
+    if (!raw) {
+        return variable;
+    }
+
+    std::string text(raw);
+    std::free(raw);
+
+    std::size_t start = 0;
+    while (start <= text.size()) {
+        const auto next = text.find('.', start);
+        const auto length = (next == std::string::npos) ? std::string::npos : next - start;
+        auto segment = text.substr(start, length);
+        if (!segment.empty()) {
+            variable->path.push_back(trx::ast::VariableSegment{.identifier = std::move(segment), .subscript = std::nullopt});
+        }
+        if (next == std::string::npos) {
+            break;
+        }
+        start = next + 1;
+    }
+
+    return variable;
+}
+
 inline trx::ast::ExpressionPtr *expressionFrom(void *ptr) {
     return static_cast<trx::ast::ExpressionPtr *>(ptr);
 }
@@ -116,6 +142,8 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 %token <number> NUMBER
 %token INCLUDE CONSTANT PROCEDURE NULL_K RECORD
 %token ASSIGN
+%token AND OR NOT TRUE FALSE
+%token LE GE NEQ NEQ2
 %token _CHAR _INTEGER _SMALLINT _DECIMAL _BOOLEAN _FILE _BLOB
 %token DATE TIME
 %token LBRACE RBRACE LPAREN RPAREN COMMA SEMICOLON
@@ -125,7 +153,17 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 %type <text> include_target
 %type <ptr> fields field_def
 %type <ptr> procedure_body statement_list statement assignment_statement variable expression variable_reference
+%type <ptr> logical_or_expression logical_and_expression equality_expression relational_expression additive_expression multiplicative_expression unary_expression primary_expression literal
 %type <number> dimension
+
+%left OR
+%left AND
+%nonassoc '=' NEQ NEQ2
+%nonassoc '<' '>' LE GE
+%left '+' '-'
+%left '*' '/'
+%right NOT
+%right UPLUS UMINUS
 
 %%
 
@@ -436,32 +474,193 @@ assignment_statement
     ;
 
 expression
-    : variable_reference
-      {
-          $$ = $1;
-      }
-    ;
+        : logical_or_expression
+            {
+                    $$ = $1;
+            }
+        ;
+
+logical_or_expression
+        : logical_and_expression
+            {
+                    $$ = $1;
+            }
+        | logical_or_expression OR logical_and_expression
+            {
+                    $$ = binaryExpression(trx::ast::BinaryOperator::Or, $1, $3);
+            }
+        ;
+
+logical_and_expression
+        : equality_expression
+            {
+                    $$ = $1;
+            }
+        | logical_and_expression AND equality_expression
+            {
+                    $$ = binaryExpression(trx::ast::BinaryOperator::And, $1, $3);
+            }
+        ;
+
+equality_expression
+        : relational_expression
+            {
+                    $$ = $1;
+            }
+        | equality_expression '=' relational_expression
+            {
+                    $$ = binaryExpression(trx::ast::BinaryOperator::Equal, $1, $3);
+            }
+        | equality_expression NEQ relational_expression
+            {
+                    $$ = binaryExpression(trx::ast::BinaryOperator::NotEqual, $1, $3);
+            }
+        | equality_expression NEQ2 relational_expression
+            {
+                    $$ = binaryExpression(trx::ast::BinaryOperator::NotEqual, $1, $3);
+            }
+        ;
+
+relational_expression
+        : additive_expression
+            {
+                    $$ = $1;
+            }
+        | relational_expression '<' additive_expression
+            {
+                    $$ = binaryExpression(trx::ast::BinaryOperator::Less, $1, $3);
+            }
+        | relational_expression '>' additive_expression
+            {
+                    $$ = binaryExpression(trx::ast::BinaryOperator::Greater, $1, $3);
+            }
+        | relational_expression LE additive_expression
+            {
+                    $$ = binaryExpression(trx::ast::BinaryOperator::LessEqual, $1, $3);
+            }
+        | relational_expression GE additive_expression
+            {
+                    $$ = binaryExpression(trx::ast::BinaryOperator::GreaterEqual, $1, $3);
+            }
+        ;
+
+additive_expression
+        : multiplicative_expression
+            {
+                    $$ = $1;
+            }
+        | additive_expression '+' multiplicative_expression
+            {
+                    $$ = binaryExpression(trx::ast::BinaryOperator::Add, $1, $3);
+            }
+        | additive_expression '-' multiplicative_expression
+            {
+                    $$ = binaryExpression(trx::ast::BinaryOperator::Subtract, $1, $3);
+            }
+        ;
+
+multiplicative_expression
+        : unary_expression
+            {
+                    $$ = $1;
+            }
+        | multiplicative_expression '*' unary_expression
+            {
+                    $$ = binaryExpression(trx::ast::BinaryOperator::Multiply, $1, $3);
+            }
+        | multiplicative_expression '/' unary_expression
+            {
+                    $$ = binaryExpression(trx::ast::BinaryOperator::Divide, $1, $3);
+            }
+        ;
+
+unary_expression
+        : primary_expression
+            {
+                    $$ = $1;
+            }
+        | '-' unary_expression %prec UMINUS
+            {
+                    $$ = unaryExpression(trx::ast::UnaryOperator::Negate, $2);
+            }
+        | '+' unary_expression %prec UPLUS
+            {
+                    $$ = unaryExpression(trx::ast::UnaryOperator::Positive, $2);
+            }
+        | NOT unary_expression
+            {
+                    $$ = unaryExpression(trx::ast::UnaryOperator::Not, $2);
+            }
+        ;
+
+primary_expression
+        : literal
+            {
+                    $$ = $1;
+            }
+        | variable_reference
+            {
+                    $$ = $1;
+            }
+        | LPAREN expression RPAREN
+            {
+                    $$ = expressionFrom($2);
+            }
+        ;
+
+literal
+        : NUMBER
+            {
+                    $$ = wrapExpression(trx::ast::makeNumericLiteral($1));
+            }
+        | STRING
+            {
+                    auto expr = wrapExpression(trx::ast::makeStringLiteral($1 ? std::string($1) : std::string{}));
+                    std::free($1);
+                    $$ = expr;
+            }
+        | TRUE
+            {
+                    $$ = wrapExpression(trx::ast::makeBooleanLiteral(true));
+            }
+        | FALSE
+            {
+                    $$ = wrapExpression(trx::ast::makeBooleanLiteral(false));
+            }
+        ;
 
 variable_reference
-    : variable
-      {
-          auto var = variableFrom($1);
-          auto expr = new trx::ast::ExpressionPtr(trx::ast::makeVariable(std::move(*var)));
-          delete var;
-          $$ = expr;
-      }
-    ;
+        : variable
+            {
+                    auto var = variableFrom($1);
+                    auto expr = wrapExpression(trx::ast::makeVariable(std::move(*var)));
+                    delete var;
+                    $$ = expr;
+            }
+        ;
 
 variable
-    : identifier
-      {
-          auto var = new trx::ast::VariableExpression();
-          trx::ast::VariableSegment segment{.identifier = $1 ? std::string($1) : std::string{}, .subscript = std::nullopt};
-          std::free($1);
-          var->path.push_back(std::move(segment));
-          $$ = var;
-      }
-    ;
+        : identifier
+            {
+                    auto var = new trx::ast::VariableExpression();
+                    trx::ast::VariableSegment segment{.identifier = $1 ? std::string($1) : std::string{}, .subscript = std::nullopt};
+                    std::free($1);
+                    var->path.push_back(std::move(segment));
+                    $$ = var;
+            }
+        | PATH
+            {
+                    $$ = variableFromPath($1);
+            }
+        | variable '.' identifier
+            {
+                    auto var = variableFrom($1);
+                    trx::ast::VariableSegment segment{.identifier = $3 ? std::string($3) : std::string{}, .subscript = std::nullopt};
+                    std::free($3);
+                    var->path.push_back(std::move(segment));
+                    $$ = var;
+            }
+        ;
 
 parameter
     : NULL_K

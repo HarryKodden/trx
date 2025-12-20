@@ -77,6 +77,11 @@ STRING       \"([^\"\\]|\\.)*\"
 [Pp][Rr][Oo][Cc][Ee][Dd][Uu][Rr][Ee] { return PROCEDURE; }
 [Nn][Uu][Ll][Ll] { return NULL_K; }
 [Rr][Ee][Cc][Oo][Rr][Dd] { return RECORD; }
+[Tt][Rr][Uu][Ee] { return TRUE; }
+[Ff][Aa][Ll][Ss][Ee] { return FALSE; }
+[Aa][Nn][Dd] { return AND; }
+[Oo][Rr] { return OR; }
+[Nn][Oo][Tt] { return NOT; }
 [Cc][Hh][Aa][Rr] { return _CHAR; }
 [Ii][Nn][Tt][Ee][Gg][Ee][Rr] { return _INTEGER; }
 [Ss][Mm][Aa][Ll][Ll][Ii][Nn][Tt] { return _SMALLINT; }
@@ -94,6 +99,10 @@ STRING       \"([^\"\\]|\\.)*\"
 ","             { return COMMA; }
 ";"             { return SEMICOLON; }
 ":="            { return ASSIGN; }
+"<="            { return LE; }
+">="            { return GE; }
+"<>"            { return NEQ; }
+"><"            { return NEQ2; }
 
 {STRING}        {
                     YYLVAL.text = duplicate_string_literal(yytext, yyleng);

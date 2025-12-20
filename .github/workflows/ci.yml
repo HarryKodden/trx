@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+env:
+  BUILD_DIR: build
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install build prerequisites
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build flex bison
+      - name: Configure with warnings-as-errors
+        working-directory: rewrite
+        run: cmake -S . -B ${{ env.BUILD_DIR }} -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror"
+      - name: Build (lint)
+        working-directory: rewrite
+        run: cmake --build ${{ env.BUILD_DIR }}
+
+  test:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install build prerequisites
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build flex bison
+      - name: Configure
+        working-directory: rewrite
+        run: cmake -S . -B ${{ env.BUILD_DIR }} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+      - name: Build
+        working-directory: rewrite
+        run: cmake --build ${{ env.BUILD_DIR }}
+      - name: Run tests
+        working-directory: rewrite
+        run: ctest --test-dir ${{ env.BUILD_DIR }} --output-on-failure
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build runtime image
+        working-directory: rewrite
+        run: docker build -t trx-rewrite .
+      - name: Build builder image
+        working-directory: rewrite
+        run: docker build --target builder -t trx-rewrite-dev .
