@@ -1,0 +1,69 @@
+#pragma once
+
+#include "trx/ast/SourceLocation.h"
+#include "trx/ast/Statements.h"
+
+#include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <variant>
+#include <vector>
+
+namespace trx::ast {
+
+struct Identifier {
+    std::string name;
+    SourceLocation location{};
+};
+
+struct IncludeDecl {
+    Identifier file;
+};
+
+struct ConstantDecl {
+    Identifier name;
+    std::variant<double, std::string> value;
+};
+
+struct ParameterDecl {
+    Identifier type;
+};
+
+struct ProcedureDecl {
+    Identifier name;
+    std::optional<ParameterDecl> input;
+    std::optional<ParameterDecl> output;
+    std::vector<Statement> body;
+};
+
+struct RecordField {
+    Identifier name;
+    std::string typeName;
+    long length{0};
+    short dimension{1};
+    std::optional<short> scale{};
+};
+
+struct RecordDecl {
+    Identifier name;
+    std::vector<RecordField> fields;
+};
+
+struct ExternalProcedureDecl {
+    Identifier name;
+    std::optional<Identifier> input;
+    std::optional<Identifier> output;
+};
+
+using Declaration = std::variant<IncludeDecl,
+                                 ConstantDecl,
+                                 RecordDecl,
+                                 ProcedureDecl,
+                                 ExternalProcedureDecl>;
+
+struct Module {
+    std::vector<Declaration> declarations;
+};
+
+} // namespace trx::ast
