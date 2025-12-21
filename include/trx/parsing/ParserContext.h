@@ -27,6 +27,7 @@ public:
     void addRecord(ast::RecordDecl record);
     void addProcedure(ast::ProcedureDecl procedure);
     void addExternalProcedure(ast::ExternalProcedureDecl externalProcedure);
+    void addTable(ast::TableDecl table);
 
     [[nodiscard]] ast::ParameterDecl makeParameter(std::string name, const ast::SourceLocation &location);
     void finalize();

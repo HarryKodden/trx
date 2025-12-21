@@ -87,8 +87,12 @@ SQLTEXT      [^\s:;]+
 [Ii][Nn][Cc][Ll][Uu][Dd][Ee]  { return INCLUDE; }
 [Cc][Oo][Nn][Ss][Tt][Aa][Nn][Tt] { return CONSTANT; }
 [Pp][Rr][Oo][Cc][Ee][Dd][Uu][Rr][Ee] { return PROCEDURE; }
-[Nn][Uu][Ll][Ll] { return NULL_K; }
 [Rr][Ee][Cc][Oo][Rr][Dd] { return RECORD; }
+
+[Tt][Aa][Bb][Ll][Ee] { return TABLE; }
+[Nn][Uu][Ll][Ll] { return NULL_K; }
+[Pp][Rr][Ii][Mm][Aa][Rr][Yy] { return PRIMARY; }
+[Kk][Ee][Yy] { return KEY; }
 [Ii][Ff] { return IF; }
 [Tt][Hh][Ee][Nn] { return THEN; }
 [Ee][Ll][Ss][Ee] { return ELSE; }

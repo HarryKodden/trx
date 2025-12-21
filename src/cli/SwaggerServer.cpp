@@ -556,7 +556,7 @@ std::string serializeJsonValue(const trx::runtime::JsonValue &value) {
     throw std::runtime_error("Unsupported JsonValue variant");
 }
 
-std::string buildSwaggerSpec(const std::vector<std::string> &procedures) {
+std::string buildSwaggerSpec(const std::vector<std::string> &procedures, int port) {
     std::ostringstream spec;
     spec << "{\"openapi\":\"3.0.0\",\"info\":{\"title\":\"TRX Procedure Playground\",\"version\":\"0.1.0\"},";
     spec << "\"paths\":{\"/execute\":{\"post\":{\"summary\":\"Execute TRX procedure\",";
@@ -571,7 +571,7 @@ std::string buildSwaggerSpec(const std::vector<std::string> &procedures) {
     spec << "\"input\":{\"type\":\"object\",\"description\":\"Input record matching the TRX definition\"}},\"required\":[\"procedure\",\"input\"]}}}},";
     spec << "\"responses\":{\"200\":{\"description\":\"Execution succeeded\",\"content\":{\"application/json\":{\"schema\":{\"type\":\"object\",\"properties\":{\"output\":{\"type\":\"object\"}}}}}},";
     spec << "\"400\":{\"description\":\"Invalid request\"},\"404\":{\"description\":\"Procedure not found\"},\"500\":{\"description\":\"Execution error\"}}}}},";
-    spec << "\"components\":{},\"servers\":[{\"url\":\"/\"}]}";
+    spec << "\"components\":{},\"servers\":[{\"url\":\"http://localhost:" << port << "/\"}]}";
     return spec.str();
 }
 
@@ -762,8 +762,8 @@ int runSwaggerServer(const std::filesystem::path &sourcePath, ServeOptions optio
         defaultProcedure = *options.procedure;
     }
 
-    trx::runtime::Interpreter interpreter(module);
-    const std::string swaggerSpec = buildSwaggerSpec(procedureNames);
+    trx::runtime::Interpreter interpreter(module, trx::runtime::createDatabaseDriver(options.dbConfig));
+    const std::string swaggerSpec = buildSwaggerSpec(procedureNames, options.port);
     const std::string swaggerIndex = buildSwaggerIndexPage();
     const std::string proceduresPayload = buildProceduresPayload(procedureNames, defaultProcedure);
 

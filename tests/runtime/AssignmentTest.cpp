@@ -88,7 +88,7 @@ bool runCopyProcedureTest() {
         return false;
     }
 
-    trx::runtime::Interpreter interpreter(driver.context().module());
+    trx::runtime::Interpreter interpreter(driver.context().module(), nullptr); // Use default SQLite driver
 
     trx::runtime::JsonValue::Object home;
     home.emplace("STREET", trx::runtime::JsonValue("Main Street"));

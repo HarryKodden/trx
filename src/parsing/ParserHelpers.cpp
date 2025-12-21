@@ -53,6 +53,10 @@ void ParserContext::addExternalProcedure(ast::ExternalProcedureDecl externalProc
     module_.declarations.emplace_back(std::move(externalProcedure));
 }
 
+void ParserContext::addTable(ast::TableDecl table) {
+    module_.declarations.emplace_back(std::move(table));
+}
+
 ast::ParameterDecl ParserContext::makeParameter(std::string name, const ast::SourceLocation &location) {
     ast::ParameterDecl parameter{.type = {.name = std::move(name), .location = location}};
 

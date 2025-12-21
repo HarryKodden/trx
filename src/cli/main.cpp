@@ -12,8 +12,11 @@ namespace {
 void printUsage() {
     std::cerr << "Usage:\n";
     std::cerr << "  trx_compiler <source.trx>\n";
-    std::cerr << "  trx_compiler [--procedure <name>] <source.trx>\n";
-    std::cerr << "  trx_compiler serve [--port <port>] [--procedure <name>] <source path>\n";
+    std::cerr << "  trx_compiler [--procedure <name>] [--db-type <type>] [--db-connection <conn>] <source.trx>\n";
+    std::cerr << "  trx_compiler serve [--port <port>] [--procedure <name>] [--db-type <type>] [--db-connection <conn>] <source path>\n";
+    std::cerr << "\nDatabase options:\n";
+    std::cerr << "  --db-type <type>        Database type: sqlite, postgresql, odbc (default: sqlite)\n";
+    std::cerr << "  --db-connection <conn>  Database connection string/path (default: :memory: for sqlite)\n";
 }
 
 } // namespace
@@ -28,6 +31,9 @@ int main(int argc, char *argv[]) {
     trx::cli::ServeOptions serveOptions;
     std::optional<std::filesystem::path> sourcePath;
     std::optional<std::string> procedureToExecute;
+    trx::runtime::DatabaseConfig dbConfig;
+    dbConfig.type = trx::runtime::DatabaseType::SQLITE;
+    dbConfig.databasePath = ":memory:";
 
     for (int index = 1; index < argc; ++index) {
         const std::string argument{argv[index]};
@@ -56,6 +62,31 @@ int main(int argc, char *argv[]) {
             procedureToExecute = std::string{argv[++index]};
             continue;
         }
+        if ((argument == "--db-type" || argument == "-t") && index + 1 < argc) {
+            std::string dbType = argv[++index];
+            if (dbType == "sqlite") {
+                dbConfig.type = trx::runtime::DatabaseType::SQLITE;
+            } else if (dbType == "postgresql") {
+                dbConfig.type = trx::runtime::DatabaseType::POSTGRESQL;
+            } else if (dbType == "odbc") {
+                dbConfig.type = trx::runtime::DatabaseType::ODBC;
+            } else {
+                std::cerr << "Unknown database type: " << dbType << "\n";
+                return 1;
+            }
+            continue;
+        }
+        if ((argument == "--db-connection" || argument == "-c") && index + 1 < argc) {
+            std::string connStr = argv[++index];
+            if (dbConfig.type == trx::runtime::DatabaseType::SQLITE) {
+                dbConfig.databasePath = connStr;
+            } else if (dbConfig.type == trx::runtime::DatabaseType::ODBC) {
+                dbConfig.connectionString = connStr;
+            } else {
+                dbConfig.connectionString = connStr;
+            }
+            continue;
+        }
         if (!sourcePath) {
             sourcePath = std::filesystem::path{argument};
             continue;
@@ -72,6 +103,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (serveMode) {
+        serveOptions.dbConfig = dbConfig;
         return trx::cli::runSwaggerServer(*sourcePath, serveOptions);
     }
 
@@ -86,7 +118,8 @@ int main(int argc, char *argv[]) {
     std::cout << "Parsed " << sourcePath->string() << " successfully\n";
 
     if (procedureToExecute) {
-        trx::runtime::Interpreter interpreter{driver.context().module()};
+        auto dbDriver = trx::runtime::createDatabaseDriver(dbConfig);
+        trx::runtime::Interpreter interpreter{driver.context().module(), std::move(dbDriver)};
         try {
             trx::runtime::JsonValue input = trx::runtime::JsonValue::object(); // For now, empty input
             trx::runtime::JsonValue result = interpreter.execute(*procedureToExecute, input);

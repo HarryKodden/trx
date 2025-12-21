@@ -57,7 +57,8 @@ enum class SqlStatementKind {
     DeclareCursor,
     OpenCursor,
     FetchCursor,
-    CloseCursor
+    CloseCursor,
+    SelectForUpdate
 };
 
 struct SqlStatement {

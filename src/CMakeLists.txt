@@ -9,6 +9,11 @@ target_sources(trx_core
     parsing/ParserHelpers.cpp
     runtime/Interpreter.cpp
     runtime/SymbolTable.cpp
+    runtime/JsonValue.cpp
+    runtime/DatabaseDriverFactory.cpp
+    runtime/SQLiteDriver.cpp
+    runtime/PostgreSQLDriver.cpp
+    runtime/ODBCDriver.cpp
 )
 
 target_include_directories(trx_core

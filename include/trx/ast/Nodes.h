@@ -48,9 +48,24 @@ struct RecordField {
     bool hasExplicitJsonName{false};
 };
 
+struct TableColumn {
+    Identifier name;
+    std::string typeName;
+    bool isPrimaryKey{false};
+    bool isNullable{true};
+    std::optional<long> length{};
+    std::optional<short> scale{};
+    std::optional<std::string> defaultValue{};
+};
+
 struct RecordDecl {
     Identifier name;
     std::vector<RecordField> fields;
+};
+
+struct TableDecl {
+    Identifier name;
+    std::vector<TableColumn> columns;
 };
 
 struct ExternalProcedureDecl {
@@ -62,6 +77,7 @@ struct ExternalProcedureDecl {
 using Declaration = std::variant<IncludeDecl,
                                  ConstantDecl,
                                  RecordDecl,
+                                 TableDecl,
                                  ProcedureDecl,
                                  ExternalProcedureDecl>;
 

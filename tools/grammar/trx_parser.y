@@ -8,6 +8,7 @@
 #include <cctype>
 #include <cstddef>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <optional>
 #include <string>
@@ -34,12 +35,38 @@ struct FieldFormat {
 
 using OptionalVariable = std::optional<trx::ast::VariableExpression>;
 
+using TableColumnList = std::vector<trx::ast::TableColumn>;
+
+struct TableColumnAttrs {
+    bool isPrimaryKey{false};
+    bool isNullable{true};
+    std::optional<long> length{};
+    std::optional<short> scale{};
+    std::optional<std::string> defaultValue{};
+};
+
 inline FieldList *newFieldList() {
     return new FieldList();
 }
 
 inline FieldList *fieldListFrom(void *ptr) {
     return static_cast<FieldList *>(ptr);
+}
+
+inline TableColumnList *newTableColumnList() {
+    return new TableColumnList();
+}
+
+inline TableColumnList *tableColumnListFrom(void *ptr) {
+    return static_cast<TableColumnList *>(ptr);
+}
+
+inline TableColumnAttrs *newTableColumnAttrs() {
+    return new TableColumnAttrs();
+}
+
+inline TableColumnAttrs *tableColumnAttrsFrom(void *ptr) {
+    return static_cast<TableColumnAttrs *>(ptr);
 }
 
 inline StatementList *newStatementList() {
@@ -146,6 +173,14 @@ inline trx::ast::ExpressionPtr *unaryExpression(trx::ast::UnaryOperator op, void
 
 inline long toLength(double value) {
     auto converted = static_cast<long>(value);
+    if (converted < 0) {
+        converted = 0;
+    }
+    return converted;
+}
+
+inline short toScale(double value) {
+    auto converted = static_cast<short>(value);
     if (converted < 0) {
         converted = 0;
     }
@@ -321,6 +356,16 @@ inline void classifySqlStatement(trx::ast::SqlStatement &statement) {
         statement.kind = trx::ast::SqlStatementKind::FetchCursor;
         return;
     }
+
+    // Check for SELECT ... FOR UPDATE OF ... statements
+    if (matchesKeyword("SELECT")) {
+        // Look for "FOR UPDATE OF" pattern in the SQL
+        std::string::size_type forUpdatePos = upper.find(" FOR UPDATE OF ");
+        if (forUpdatePos != std::string::npos) {
+            statement.kind = trx::ast::SqlStatementKind::SelectForUpdate;
+        }
+        return;
+    }
 }
 } // namespace
 
@@ -354,7 +399,7 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 
 %token <text> IDENT STRING PATH SQL_TEXT SQL_VARIABLE
 %token <number> NUMBER
-%token INCLUDE CONSTANT PROCEDURE NULL_K RECORD
+%token INCLUDE CONSTANT PROCEDURE TABLE PRIMARY KEY NULL_K RECORD
 %token IF THEN ELSE WHILE SWITCH CASE DEFAULT
 %token CALL
 %token EXEC_SQL
@@ -373,6 +418,8 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 %type <ptr> format_decl
 %type <ptr> variable expression variable_reference
 %type <ptr> logical_or_expression logical_and_expression equality_expression relational_expression additive_expression multiplicative_expression unary_expression primary_expression literal
+%type <ptr> table_decl table_columns table_column_def table_column_attrs
+%type <text> column_type
 %type <number> dimension
 
 %left OR
@@ -399,6 +446,7 @@ definition
     : include_decl
     | constant_decl
     | record_decl
+    | table_decl
     | procedure_decl
     ;
 
@@ -456,6 +504,23 @@ record_decl
           }
 
           driver.context().addRecord(std::move(record));
+          std::free($2);
+      }
+    ;
+
+table_decl
+    : TABLE identifier LBRACE table_columns RBRACE
+      {
+          trx::ast::TableDecl table;
+          table.name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)};
+
+          auto list = tableColumnListFrom($4);
+          if (list) {
+              table.columns = std::move(*list);
+              delete list;
+          }
+
+          driver.context().addTable(std::move(table));
           std::free($2);
       }
     ;
@@ -627,6 +692,136 @@ field_def
           std::free($1);
           std::free($2);
           $$ = list;
+      }
+    ;
+
+table_columns
+    : /* empty */
+      {
+          $$ = newTableColumnList();
+      }
+    | table_columns table_column_def SEMICOLON
+      {
+          auto list = tableColumnListFrom($1);
+          auto single = tableColumnListFrom($2);
+          list->insert(list->end(), single->begin(), single->end());
+          delete single;
+          $$ = list;
+      }
+    ;
+
+table_column_def
+    : identifier column_type table_column_attrs
+      {
+          auto list = newTableColumnList();
+          trx::ast::TableColumn column;
+          column.name = {.name = $1 ? std::string($1) : std::string{}, .location = makeLocation(driver, @1)};
+          column.typeName = $2 ? std::string($2) : std::string{};
+          
+          auto attrs = tableColumnAttrsFrom($3);
+          if (attrs) {
+              column.isPrimaryKey = attrs->isPrimaryKey;
+              column.isNullable = attrs->isNullable;
+              column.length = attrs->length;
+              column.scale = attrs->scale;
+              column.defaultValue = attrs->defaultValue;
+              delete attrs;
+          }
+          
+          list->push_back(std::move(column));
+          std::free($1);
+          std::free($2);
+          $$ = list;
+      }
+    ;
+
+column_type
+    : _CHAR
+      {
+          $$ = strdup("CHAR");
+      }
+    | _INTEGER
+      {
+          $$ = strdup("INTEGER");
+      }
+    | _SMALLINT
+      {
+          $$ = strdup("SMALLINT");
+      }
+    | _DECIMAL
+      {
+          $$ = strdup("DECIMAL");
+      }
+    | _BOOLEAN
+      {
+          $$ = strdup("BOOLEAN");
+      }
+    | DATE
+      {
+          $$ = strdup("DATE");
+      }
+    | TIME
+      {
+          $$ = strdup("TIME");
+      }
+    | _FILE
+      {
+          $$ = strdup("FILE");
+      }
+    | _BLOB
+      {
+          $$ = strdup("BLOB");
+      }
+    ;
+
+table_column_attrs
+    : /* empty */
+      {
+          $$ = newTableColumnAttrs();
+      }
+    | table_column_attrs PRIMARY KEY
+      {
+          auto attrs = tableColumnAttrsFrom($1);
+          attrs->isPrimaryKey = true;
+          $$ = attrs;
+      }
+    | table_column_attrs NOT NULL_K
+      {
+          auto attrs = tableColumnAttrsFrom($1);
+          attrs->isNullable = false;
+          $$ = attrs;
+      }
+    | table_column_attrs NULL_K
+      {
+          auto attrs = tableColumnAttrsFrom($1);
+          attrs->isNullable = true;
+          $$ = attrs;
+      }
+    | table_column_attrs LPAREN NUMBER RPAREN
+      {
+          auto attrs = tableColumnAttrsFrom($1);
+          attrs->length = toLength($3);
+          $$ = attrs;
+      }
+    | table_column_attrs LPAREN NUMBER COMMA NUMBER RPAREN
+      {
+          auto attrs = tableColumnAttrsFrom($1);
+          attrs->length = toLength($3);
+          attrs->scale = toScale($5);
+          $$ = attrs;
+      }
+    | table_column_attrs DEFAULT STRING
+      {
+          auto attrs = tableColumnAttrsFrom($1);
+          attrs->defaultValue = $3 ? std::string($3) : std::string{};
+          std::free($3);
+          $$ = attrs;
+      }
+    | table_column_attrs DEFAULT NUMBER
+      {
+          auto attrs = tableColumnAttrsFrom($1);
+          attrs->defaultValue = std::to_string($3);
+          $$ = attrs;
       }
     ;
 
