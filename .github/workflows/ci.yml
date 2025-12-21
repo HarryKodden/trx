@@ -15,7 +15,7 @@ jobs:
       - name: Install build prerequisites
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build flex bison
       - name: Configure with warnings-as-errors
-        run: cmake -S rewrite -B build/lint -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror"
+        run: cmake -S . -B build/lint -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror"
       - name: Build (lint)
         run: cmake --build build/lint
 
@@ -28,7 +28,7 @@ jobs:
       - name: Install build prerequisites
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build flex bison
       - name: Configure
-        run: cmake -S rewrite -B build/default -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+        run: cmake -S . -B build/default -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
       - name: Build
         run: cmake --build build/default
       - name: Run tests
@@ -41,6 +41,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Build runtime image
-        run: docker build -t trx-rewrite rewrite
+        run: docker build -t trx-rewrite .
       - name: Build builder image
-        run: docker build --target builder -t trx-rewrite-dev rewrite
+        run: docker build --target builder -t trx-rewrite-dev .
