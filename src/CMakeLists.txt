@@ -55,7 +55,10 @@ elseif(FLEX_LIBRARIES)
   target_link_libraries(trx_core PRIVATE ${FLEX_LIBRARIES})
 endif()
 
-add_executable(trx_compiler cli/main.cpp)
+add_executable(trx_compiler
+  cli/main.cpp
+  cli/SwaggerServer.cpp
+)
 
 target_link_libraries(trx_compiler
   PRIVATE

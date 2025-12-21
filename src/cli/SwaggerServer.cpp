@@ -1,0 +1,746 @@
+#include "SwaggerServer.h"
+
+#include "trx/ast/Nodes.h"
+#include "trx/ast/Statements.h"
+#include "trx/parsing/ParserDriver.h"
+#include "trx/runtime/Interpreter.h"
+
+#include <algorithm>
+#include <atomic>
+#include <arpa/inet.h>
+#include <cerrno>
+#include <cctype>
+#include <csignal>
+#include <cstdio>
+#include <cstring>
+#include <iostream>
+#include <map>
+#include <netinet/in.h>
+#include <optional>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <utility>
+#include <vector>
+
+namespace trx::cli {
+namespace {
+
+std::atomic<bool> g_stopServer{false};
+
+void handleSignal(int signum) {
+    if (signum == SIGINT) {
+        g_stopServer.store(true);
+    }
+}
+
+struct HttpRequest {
+    std::string method;
+    std::string path;
+    std::map<std::string, std::string> headers;
+    std::string body;
+};
+
+struct HttpResponse {
+    int status{200};
+    std::string contentType{"text/plain"};
+    std::string body;
+    std::vector<std::pair<std::string, std::string>> extraHeaders;
+};
+
+std::string statusMessage(int status) {
+    switch (status) {
+    case 200: return "OK";
+    case 204: return "No Content";
+    case 400: return "Bad Request";
+    case 404: return "Not Found";
+    case 405: return "Method Not Allowed";
+    case 500: return "Internal Server Error";
+    default: return "Unknown";
+    }
+}
+
+void sendHttpResponse(int clientFd, const HttpResponse &response) {
+    std::ostringstream stream;
+    stream << "HTTP/1.1 " << response.status << ' ' << statusMessage(response.status) << "\r\n";
+    stream << "Content-Type: " << response.contentType << "\r\n";
+    stream << "Access-Control-Allow-Origin: *\r\n";
+    for (const auto &header : response.extraHeaders) {
+        stream << header.first << ": " << header.second << "\r\n";
+    }
+
+    const std::string &body = response.body;
+    stream << "Content-Length: " << body.size() << "\r\n";
+    stream << "Connection: close\r\n\r\n";
+    stream << body;
+
+    const std::string data = stream.str();
+    std::size_t sent = 0;
+    while (sent < data.size()) {
+        const ssize_t written = ::send(clientFd, data.data() + sent, data.size() - sent, 0);
+        if (written <= 0) {
+            break;
+        }
+        sent += static_cast<std::size_t>(written);
+    }
+}
+
+bool readHttpRequest(int clientFd, HttpRequest &request) {
+    std::string buffer;
+    buffer.reserve(4096);
+
+    std::string headers;
+    std::string body;
+
+    std::optional<std::size_t> contentLength;
+    while (true) {
+        char chunk[2048];
+        const ssize_t received = ::recv(clientFd, chunk, sizeof(chunk), 0);
+        if (received <= 0) {
+            return false;
+        }
+        buffer.append(chunk, static_cast<std::size_t>(received));
+
+        const auto headerEnd = buffer.find("\r\n\r\n");
+        if (!contentLength.has_value() && headerEnd != std::string::npos) {
+            headers = buffer.substr(0, headerEnd);
+            body = buffer.substr(headerEnd + 4);
+
+            std::istringstream headerStream(headers);
+            std::string requestLine;
+            if (!std::getline(headerStream, requestLine)) {
+                return false;
+            }
+            if (!requestLine.empty() && requestLine.back() == '\r') {
+                requestLine.pop_back();
+            }
+            std::istringstream lineStream(requestLine);
+            std::string version;
+            if (!(lineStream >> request.method >> request.path >> version)) {
+                return false;
+            }
+
+            std::string headerLine;
+            while (std::getline(headerStream, headerLine)) {
+                if (!headerLine.empty() && headerLine.back() == '\r') {
+                    headerLine.pop_back();
+                }
+                if (headerLine.empty()) {
+                    continue;
+                }
+                const auto colonPos = headerLine.find(':');
+                if (colonPos == std::string::npos) {
+                    continue;
+                }
+                std::string key = headerLine.substr(0, colonPos);
+                std::string value = headerLine.substr(colonPos + 1);
+                while (!value.empty() && value.front() == ' ') {
+                    value.erase(value.begin());
+                }
+                // normalize header names to lowercase for lookups
+                std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                request.headers.emplace(std::move(key), std::move(value));
+            }
+
+            auto contentLengthIt = request.headers.find("content-length");
+            if (contentLengthIt != request.headers.end()) {
+                try {
+                    contentLength = static_cast<std::size_t>(std::stoul(contentLengthIt->second));
+                } catch (const std::exception &) {
+                    return false;
+                }
+            } else {
+                contentLength = body.size();
+            }
+        }
+
+        if (contentLength.has_value() && body.size() >= contentLength.value()) {
+            break;
+        }
+
+        if (contentLength.has_value() && body.size() < contentLength.value()) {
+            const std::size_t missing = contentLength.value() - body.size();
+            if (missing > 0) {
+                continue;
+            }
+        }
+    }
+
+    if (!contentLength.has_value()) {
+        contentLength = 0;
+    }
+
+    const auto headerEnd = buffer.find("\r\n\r\n");
+    if (headerEnd == std::string::npos) {
+        return false;
+    }
+    headers = buffer.substr(0, headerEnd);
+    body = buffer.substr(headerEnd + 4);
+    if (body.size() > contentLength.value()) {
+        body.resize(contentLength.value());
+    }
+
+    // trim query string from path
+    if (const auto question = request.path.find('?'); question != std::string::npos) {
+        request.path.erase(question);
+    }
+
+    request.body = std::move(body);
+    return true;
+}
+
+struct JsonParseError : std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
+
+class JsonParser {
+public:
+    explicit JsonParser(std::string_view text) : text_(text) {}
+
+    trx::runtime::JsonValue parse() {
+        skipWhitespace();
+        auto value = parseValue();
+        skipWhitespace();
+        if (position_ != text_.size()) {
+            throw JsonParseError("Unexpected trailing data in JSON payload");
+        }
+        return value;
+    }
+
+private:
+    std::string_view text_;
+    std::size_t position_{0};
+
+    bool eof() const {
+        return position_ >= text_.size();
+    }
+
+    char peek() const {
+        if (eof()) {
+            return '\0';
+        }
+        return text_[position_];
+    }
+
+    char consume() {
+        if (eof()) {
+            throw JsonParseError("Unexpected end of JSON payload");
+        }
+        return text_[position_++];
+    }
+
+    void expect(char expected) {
+        const char actual = consume();
+        if (actual != expected) {
+            throw JsonParseError("Unexpected character in JSON payload");
+        }
+    }
+
+    void skipWhitespace() {
+        while (!eof()) {
+            const char c = peek();
+            if (c == ' ' || c == '\n' || c == '\r' || c == '\t') {
+                ++position_;
+            } else {
+                break;
+            }
+        }
+    }
+
+    trx::runtime::JsonValue parseValue() {
+        if (eof()) {
+            throw JsonParseError("Unexpected end of JSON payload");
+        }
+        const char c = peek();
+        if (c == '"') {
+            return trx::runtime::JsonValue(parseString());
+        }
+        if (c == '{') {
+            return parseObject();
+        }
+        if (startsWithRemaining("true")) {
+            position_ += 4;
+            return trx::runtime::JsonValue(true);
+        }
+        if (startsWithRemaining("false")) {
+            position_ += 5;
+            return trx::runtime::JsonValue(false);
+        }
+        if (startsWithRemaining("null")) {
+            position_ += 4;
+            return trx::runtime::JsonValue();
+        }
+        if (c == '-' || (c >= '0' && c <= '9')) {
+            return parseNumber();
+        }
+        throw JsonParseError("Unsupported JSON token encountered");
+    }
+
+    bool startsWithRemaining(std::string_view literal) const {
+        if (text_.size() - position_ < literal.size()) {
+            return false;
+        }
+        return text_.substr(position_, literal.size()) == literal;
+    }
+
+    std::string parseString() {
+        expect('"');
+        std::string result;
+        while (true) {
+            if (eof()) {
+                throw JsonParseError("Unterminated string literal");
+            }
+            char c = consume();
+            if (c == '"') {
+                break;
+            }
+            if (c == '\\') {
+                if (eof()) {
+                    throw JsonParseError("Invalid escape sequence");
+                }
+                c = consume();
+                switch (c) {
+                case '"': result.push_back('"'); break;
+                case '\\': result.push_back('\\'); break;
+                case '/': result.push_back('/'); break;
+                case 'b': result.push_back('\b'); break;
+                case 'f': result.push_back('\f'); break;
+                case 'n': result.push_back('\n'); break;
+                case 'r': result.push_back('\r'); break;
+                case 't': result.push_back('\t'); break;
+                case 'u': {
+                    unsigned int codepoint = 0;
+                    for (int i = 0; i < 4; ++i) {
+                        if (eof()) {
+                            throw JsonParseError("Invalid Unicode escape");
+                        }
+                        const char hex = consume();
+                        codepoint <<= 4;
+                        if (hex >= '0' && hex <= '9') {
+                            codepoint |= static_cast<unsigned int>(hex - '0');
+                        } else if (hex >= 'a' && hex <= 'f') {
+                            codepoint |= static_cast<unsigned int>(hex - 'a' + 10);
+                        } else if (hex >= 'A' && hex <= 'F') {
+                            codepoint |= static_cast<unsigned int>(hex - 'A' + 10);
+                        } else {
+                            throw JsonParseError("Invalid Unicode escape");
+                        }
+                    }
+                    appendCodepoint(result, codepoint);
+                    break;
+                }
+                default:
+                    throw JsonParseError("Invalid escape sequence");
+                }
+            } else {
+                result.push_back(c);
+            }
+        }
+        return result;
+    }
+
+    static void appendCodepoint(std::string &output, unsigned int codepoint) {
+        if (codepoint <= 0x7F) {
+            output.push_back(static_cast<char>(codepoint));
+        } else if (codepoint <= 0x7FF) {
+            output.push_back(static_cast<char>(0xC0 | ((codepoint >> 6) & 0x1F)));
+            output.push_back(static_cast<char>(0x80 | (codepoint & 0x3F))); 
+        } else if (codepoint <= 0xFFFF) {
+            output.push_back(static_cast<char>(0xE0 | ((codepoint >> 12) & 0x0F)));
+            output.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+            output.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+        } else {
+            output.push_back(static_cast<char>(0xF0 | ((codepoint >> 18) & 0x07)));
+            output.push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F)));
+            output.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+            output.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+        }
+    }
+
+    trx::runtime::JsonValue parseNumber() {
+        const std::size_t start = position_;
+        if (peek() == '-') {
+            ++position_;
+        }
+        while (!eof() && std::isdigit(static_cast<unsigned char>(peek()))) {
+            ++position_;
+        }
+        if (!eof() && peek() == '.') {
+            ++position_;
+            while (!eof() && std::isdigit(static_cast<unsigned char>(peek()))) {
+                ++position_;
+            }
+        }
+        if (!eof() && (peek() == 'e' || peek() == 'E')) {
+            ++position_;
+            if (!eof() && (peek() == '+' || peek() == '-')) {
+                ++position_;
+            }
+            while (!eof() && std::isdigit(static_cast<unsigned char>(peek()))) {
+                ++position_;
+            }
+        }
+        const std::string number{text_.substr(start, position_ - start)};
+        try {
+            const double numeric = std::stod(number);
+            return trx::runtime::JsonValue(numeric);
+        } catch (const std::exception &) {
+            throw JsonParseError("Invalid numeric literal in JSON payload");
+        }
+    }
+
+    trx::runtime::JsonValue parseObject() {
+        expect('{');
+        trx::runtime::JsonValue::Object object;
+        skipWhitespace();
+        if (peek() == '}') {
+            consume();
+            return trx::runtime::JsonValue(std::move(object));
+        }
+        while (true) {
+            skipWhitespace();
+            if (peek() != '"') {
+                throw JsonParseError("Object keys must be strings");
+            }
+            std::string key = parseString();
+            skipWhitespace();
+            expect(':');
+            skipWhitespace();
+            trx::runtime::JsonValue value = parseValue();
+            object.emplace(std::move(key), std::move(value));
+            skipWhitespace();
+            const char delimiter = consume();
+            if (delimiter == '}') {
+                break;
+            }
+            if (delimiter != ',') {
+                throw JsonParseError("Expected comma in object literal");
+            }
+            skipWhitespace();
+        }
+        return trx::runtime::JsonValue(std::move(object));
+    }
+};
+
+std::string escapeJsonString(std::string_view input) {
+    std::string result;
+    result.reserve(input.size() + 8);
+    for (const unsigned char c : input) {
+        switch (c) {
+        case '"': result.append("\\\""); break;
+        case '\\': result.append("\\\\"); break;
+        case '\b': result.append("\\b"); break;
+        case '\f': result.append("\\f"); break;
+        case '\n': result.append("\\n"); break;
+        case '\r': result.append("\\r"); break;
+        case '\t': result.append("\\t"); break;
+        default:
+            if (c < 0x20) {
+                char buffer[7];
+                std::snprintf(buffer, sizeof(buffer), "\\u%04X", c);
+                result.append(buffer);
+            } else {
+                result.push_back(static_cast<char>(c));
+            }
+            break;
+        }
+    }
+    return result;
+}
+
+std::string serializeJsonValue(const trx::runtime::JsonValue &value);
+
+std::string serializeObject(const trx::runtime::JsonValue::Object &object) {
+    std::string result{"{"};
+    bool first = true;
+    for (const auto &entry : object) {
+        if (!first) {
+            result.push_back(',');
+        }
+        first = false;
+        result.push_back('"');
+        result.append(escapeJsonString(entry.first));
+        result.append("\":");
+        result.append(serializeJsonValue(entry.second));
+    }
+    result.push_back('}');
+    return result;
+}
+
+std::string serializeJsonValue(const trx::runtime::JsonValue &value) {
+    if (std::holds_alternative<std::nullptr_t>(value.data)) {
+        return "null";
+    }
+    if (std::holds_alternative<bool>(value.data)) {
+        return std::get<bool>(value.data) ? "true" : "false";
+    }
+    if (std::holds_alternative<double>(value.data)) {
+        std::ostringstream stream;
+        stream.setf(std::ios::fmtflags(0), std::ios::floatfield);
+        stream.precision(15);
+        stream << std::get<double>(value.data);
+        return stream.str();
+    }
+    if (std::holds_alternative<std::string>(value.data)) {
+        std::string result = "\"";
+        result.append(escapeJsonString(std::get<std::string>(value.data)));
+        result.push_back('"');
+        return result;
+    }
+    if (std::holds_alternative<trx::runtime::JsonValue::Object>(value.data)) {
+        return serializeObject(std::get<trx::runtime::JsonValue::Object>(value.data));
+    }
+    throw std::runtime_error("Unsupported JsonValue variant");
+}
+
+std::string buildSwaggerSpec(const std::vector<std::string> &procedures) {
+    std::ostringstream spec;
+    spec << "{\"openapi\":\"3.0.0\",\"info\":{\"title\":\"TRX Procedure Playground\",\"version\":\"0.1.0\"},";
+    spec << "\"paths\":{\"/execute\":{\"post\":{\"summary\":\"Execute TRX procedure\",";
+    spec << "\"requestBody\":{\"required\":true,\"content\":{\"application/json\":{\"schema\":{\"type\":\"object\",\"properties\":{\"procedure\":{\"type\":\"string\",\"enum\":[";
+    for (std::size_t i = 0; i < procedures.size(); ++i) {
+        if (i > 0) {
+            spec << ',';
+        }
+        spec << '\"' << escapeJsonString(procedures[i]) << '\"';
+    }
+    spec << "],\"description\":\"Name of the procedure to execute\"},";
+    spec << "\"input\":{\"type\":\"object\",\"description\":\"Input record matching the TRX definition\"}},\"required\":[\"procedure\",\"input\"]}}}},";
+    spec << "\"responses\":{\"200\":{\"description\":\"Execution succeeded\",\"content\":{\"application/json\":{\"schema\":{\"type\":\"object\",\"properties\":{\"output\":{\"type\":\"object\"}}}}}},";
+    spec << "\"400\":{\"description\":\"Invalid request\"},\"404\":{\"description\":\"Procedure not found\"},\"500\":{\"description\":\"Execution error\"}}}}},";
+    spec << "\"components\":{},\"servers\":[{\"url\":\"/\"}]}";
+    return spec.str();
+}
+
+std::string buildProceduresPayload(const std::vector<std::string> &procedures, const std::string &defaultProcedure) {
+    std::ostringstream out;
+    out << "{\"procedures\":[";
+    for (std::size_t i = 0; i < procedures.size(); ++i) {
+        if (i > 0) {
+            out << ',';
+        }
+        out << '\"' << escapeJsonString(procedures[i]) << '\"';
+    }
+    out << "],\"default\":\"" << escapeJsonString(defaultProcedure) << "\"}";
+    return out.str();
+}
+
+std::string buildSwaggerIndexPage() {
+    return R"(<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/><title>TRX Swagger Playground</title><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.11.0/swagger-ui.css" integrity="sha512-p0p7N6D+PfYZ7RUTpujISiFDUFxu05oig3NbS1Ry6j3TDIrS9KuX3sI5Yucs5cjox96D65gis6pZeRAEIJ5zsQ==" crossorigin="anonymous" referrerpolicy="no-referrer"/></head><body><div id="swagger-ui"></div><script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.11.0/swagger-ui-bundle.js" integrity="sha512-5H14TyBC0bYKT1eZqUPVHtV6nRvWmvMRGsiE9zraFMvx6bMpiKFFitvolG/GpNZgbf+168Q5e0siJmq9hw3rhw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script><script>window.onload=function(){SwaggerUIBundle({url:'/swagger.json',dom_id:'#swagger-ui'});};</script></body></html>)";
+}
+
+bool isCallableProcedure(const trx::ast::ProcedureDecl &procedure) {
+    if (!procedure.input || !procedure.output) {
+        return false;
+    }
+    return procedure.input->type.name == procedure.output->type.name;
+}
+
+std::vector<const trx::ast::ProcedureDecl *> collectCallableProcedures(const trx::ast::Module &module) {
+    std::vector<const trx::ast::ProcedureDecl *> procedures;
+    for (const auto &decl : module.declarations) {
+        if (const auto *proc = std::get_if<trx::ast::ProcedureDecl>(&decl)) {
+            if (isCallableProcedure(*proc)) {
+                procedures.push_back(proc);
+            }
+        }
+    }
+    return procedures;
+}
+
+HttpResponse makeErrorResponse(int status, std::string_view message) {
+    HttpResponse response;
+    response.status = status;
+    response.contentType = "application/json";
+    response.body = std::string("{\"error\":\"") + escapeJsonString(message) + "\"}";
+    return response;
+}
+
+HttpResponse handleExecute(const HttpRequest &request,
+                           const std::map<std::string, const trx::ast::ProcedureDecl *> &procedureLookup,
+                           const std::string &defaultProcedure,
+                           trx::runtime::Interpreter &interpreter) {
+    if (request.method != "POST") {
+        return makeErrorResponse(405, "Only POST supported for /execute");
+    }
+    if (!request.headers.count("content-type") || request.headers.at("content-type").find("application/json") == std::string::npos) {
+        return makeErrorResponse(400, "Content-Type must be application/json");
+    }
+    try {
+        JsonParser parser(request.body);
+        trx::runtime::JsonValue payload = parser.parse();
+        if (!std::holds_alternative<trx::runtime::JsonValue::Object>(payload.data)) {
+            return makeErrorResponse(400, "Request payload must be a JSON object");
+        }
+        auto &object = std::get<trx::runtime::JsonValue::Object>(payload.data);
+
+        std::string procedureName = defaultProcedure;
+        if (auto it = object.find("procedure"); it != object.end()) {
+            if (!std::holds_alternative<std::string>(it->second.data)) {
+                return makeErrorResponse(400, "procedure must be a string");
+            }
+            procedureName = std::get<std::string>(it->second.data);
+        }
+
+        const auto procIt = procedureLookup.find(procedureName);
+        if (procIt == procedureLookup.end()) {
+            return makeErrorResponse(404, "Unknown procedure");
+        }
+
+        auto inputIt = object.find("input");
+        if (inputIt == object.end()) {
+            return makeErrorResponse(400, "Missing input section");
+        }
+        if (!std::holds_alternative<trx::runtime::JsonValue::Object>(inputIt->second.data)) {
+            return makeErrorResponse(400, "input must be a JSON object");
+        }
+
+        const trx::runtime::JsonValue output = interpreter.execute(procedureName, inputIt->second);
+
+        HttpResponse response;
+        response.status = 200;
+        response.contentType = "application/json";
+        response.body = std::string("{\"output\":") + serializeJsonValue(output) + "}";
+        return response;
+    } catch (const JsonParseError &error) {
+        return makeErrorResponse(400, error.what());
+    } catch (const std::exception &error) {
+        return makeErrorResponse(500, error.what());
+    }
+}
+
+HttpResponse handleOptions(const HttpRequest &request) {
+    HttpResponse response;
+    response.status = 204;
+    response.contentType = "text/plain";
+    response.body.clear();
+    response.extraHeaders.emplace_back("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    response.extraHeaders.emplace_back("Access-Control-Allow-Headers", "Content-Type");
+    return response;
+}
+
+} // namespace
+
+int runSwaggerServer(const std::filesystem::path &sourcePath, ServeOptions options) {
+    trx::parsing::ParserDriver driver;
+    if (!driver.parseFile(sourcePath)) {
+        std::cerr << "Failed to parse " << sourcePath << "\n";
+        for (const auto &diagnostic : driver.diagnostics().messages()) {
+            std::cerr << "  - " << diagnostic.message << "\n";
+        }
+        return 1;
+    }
+
+    const auto &module = driver.context().module();
+    const auto callableProcedures = collectCallableProcedures(module);
+    if (callableProcedures.empty()) {
+        std::cerr << "No callable procedures (with matching input/output) were found in " << sourcePath << "\n";
+        return 1;
+    }
+
+    std::vector<std::string> procedureNames;
+    procedureNames.reserve(callableProcedures.size());
+    std::map<std::string, const trx::ast::ProcedureDecl *> procedureLookup;
+    for (const auto *procedure : callableProcedures) {
+        procedureNames.push_back(procedure->name.name);
+        procedureLookup.emplace(procedure->name.name, procedure);
+    }
+
+    std::string defaultProcedure = procedureNames.front();
+    if (options.procedure) {
+        const auto it = procedureLookup.find(*options.procedure);
+        if (it == procedureLookup.end()) {
+            std::cerr << "Procedure '" << *options.procedure << "' not found in module\n";
+            return 1;
+        }
+        defaultProcedure = *options.procedure;
+    }
+
+    trx::runtime::Interpreter interpreter(module);
+    const std::string swaggerSpec = buildSwaggerSpec(procedureNames);
+    const std::string swaggerIndex = buildSwaggerIndexPage();
+    const std::string proceduresPayload = buildProceduresPayload(procedureNames, defaultProcedure);
+
+    std::signal(SIGINT, handleSignal);
+
+    const int serverFd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (serverFd < 0) {
+        std::cerr << "Failed to create socket: " << std::strerror(errno) << "\n";
+        return 1;
+    }
+
+    const int reuse = 1;
+    ::setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_ANY);
+    address.sin_port = htons(static_cast<unsigned short>(options.port));
+    if (::bind(serverFd, reinterpret_cast<sockaddr *>(&address), sizeof(address)) < 0) {
+        std::cerr << "Failed to bind to port " << options.port << ": " << std::strerror(errno) << "\n";
+        ::close(serverFd);
+        return 1;
+    }
+
+    if (::listen(serverFd, SOMAXCONN) < 0) {
+        std::cerr << "Failed to listen on socket: " << std::strerror(errno) << "\n";
+        ::close(serverFd);
+        return 1;
+    }
+
+    std::cout << "Swagger playground available at http://localhost:" << options.port << "/" << std::endl;
+    std::cout << "Press Ctrl+C to stop the server" << std::endl;
+
+    while (!g_stopServer.load()) {
+        sockaddr_in clientAddr{};
+        socklen_t clientLen = sizeof(clientAddr);
+        const int clientFd = ::accept(serverFd, reinterpret_cast<sockaddr *>(&clientAddr), &clientLen);
+        if (clientFd < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            std::cerr << "Accept failed: " << std::strerror(errno) << "\n";
+            break;
+        }
+
+        HttpRequest request;
+        if (!readHttpRequest(clientFd, request)) {
+            ::close(clientFd);
+            continue;
+        }
+
+        HttpResponse response;
+        if (request.method == "OPTIONS") {
+            response = handleOptions(request);
+        } else if (request.path == "/") {
+            response.status = 200;
+            response.contentType = "text/html; charset=utf-8";
+            response.body = swaggerIndex;
+        } else if (request.path == "/swagger.json") {
+            response.status = 200;
+            response.contentType = "application/json";
+            response.body = swaggerSpec;
+        } else if (request.path == "/procedures") {
+            response.status = 200;
+            response.contentType = "application/json";
+            response.body = proceduresPayload;
+        } else if (request.path == "/execute") {
+            response = handleExecute(request, procedureLookup, defaultProcedure, interpreter);
+        } else {
+            response = makeErrorResponse(404, "Route not found");
+        }
+
+        sendHttpResponse(clientFd, response);
+        ::close(clientFd);
+    }
+
+    ::close(serverFd);
+    std::cout << "Server stopped" << std::endl;
+    return 0;
+}
+
+} // namespace trx::cli

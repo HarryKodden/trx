@@ -32,6 +32,8 @@ struct FieldFormat {
     bool omitEmpty{false};
 };
 
+using OptionalVariable = std::optional<trx::ast::VariableExpression>;
+
 inline FieldList *newFieldList() {
     return new FieldList();
 }
@@ -78,6 +80,14 @@ inline FieldFormat *newFieldFormat() {
 
 inline FieldFormat *fieldFormatFrom(void *ptr) {
     return static_cast<FieldFormat *>(ptr);
+}
+
+inline OptionalVariable *newOptionalVariable() {
+    return new OptionalVariable();
+}
+
+inline OptionalVariable *optionalVariableFrom(void *ptr) {
+    return static_cast<OptionalVariable *>(ptr);
 }
 
 inline trx::ast::VariableExpression *variableFrom(void *ptr) {
@@ -346,6 +356,7 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 %token <number> NUMBER
 %token INCLUDE CONSTANT PROCEDURE NULL_K RECORD
 %token IF THEN ELSE WHILE SWITCH CASE DEFAULT
+%token CALL
 %token EXEC_SQL
 %token ASSIGN
 %token AND OR NOT TRUE FALSE
@@ -358,7 +369,7 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 %type <text> parameter
 %type <text> include_target
 %type <ptr> fields field_def
-%type <ptr> procedure_body block statement_list statement assignment_statement if_statement else_clause while_statement switch_statement case_clauses case_clause default_clause sql_statement sql_chunks sql_chunk
+%type <ptr> procedure_body block statement_list statement assignment_statement call_statement if_statement else_clause while_statement switch_statement case_clauses case_clause default_clause sql_statement sql_chunks sql_chunk call_argument
 %type <ptr> format_decl
 %type <ptr> variable expression variable_reference
 %type <ptr> logical_or_expression logical_and_expression equality_expression relational_expression additive_expression multiplicative_expression unary_expression primary_expression literal
@@ -724,6 +735,10 @@ statement
       {
           $$ = $1;
       }
+    | call_statement
+      {
+          $$ = $1;
+      }
         | if_statement
             {
                     $$ = $1;
@@ -756,6 +771,52 @@ assignment_statement
           delete target;
           delete value;
           $$ = stmt;
+      }
+    ;
+
+call_statement
+    : variable ASSIGN CALL identifier LPAREN call_argument RPAREN SEMICOLON
+      {
+          auto stmt = new trx::ast::Statement();
+          stmt->location = makeLocation(driver, @1);
+          auto outputVar = variableFrom($1);
+          trx::ast::CallStatement node;
+          node.name = $4 ? std::string($4) : std::string{};
+          node.output = std::move(*outputVar);
+          delete outputVar;
+
+          auto argument = optionalVariableFrom($6);
+          if (argument && argument->has_value()) {
+              node.input = std::move(argument->value());
+          } else {
+              node.input = std::nullopt;
+          }
+          if (argument) {
+              delete argument;
+          }
+          std::free($4);
+          node.sync = false;
+          stmt->node = std::move(node);
+          $$ = stmt;
+      }
+    ;
+
+call_argument
+    : /* empty */
+      {
+          $$ = newOptionalVariable();
+      }
+    | variable
+      {
+          auto optionalVar = newOptionalVariable();
+          auto var = variableFrom($1);
+          optionalVar->emplace(std::move(*var));
+          delete var;
+          $$ = optionalVar;
+      }
+    | NULL_K
+      {
+          $$ = newOptionalVariable();
       }
     ;
 

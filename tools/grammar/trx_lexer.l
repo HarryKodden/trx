@@ -96,6 +96,7 @@ SQLTEXT      [^\s:;]+
 [Ss][Ww][Ii][Tt][Cc][Hh] { return SWITCH; }
 [Cc][Aa][Ss][Ee] { return CASE; }
 [Dd][Ee][Ff][Aa][Uu][Ll][Tt] { return DEFAULT; }
+[Cc][Aa][Ll][Ll] { return CALL; }
 [Tt][Rr][Uu][Ee] { return TRUE; }
 [Ff][Aa][Ll][Ss][Ee] { return FALSE; }
 [Aa][Nn][Dd] { return AND; }
