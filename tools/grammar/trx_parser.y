@@ -322,7 +322,7 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 %}
 
 %code provides {
-    static trx::ast::SourceLocation makeLocation(const trx::parsing::ParserDriver &driver, const YYLTYPE &loc) {
+    [[maybe_unused]] static trx::ast::SourceLocation makeLocation(const trx::parsing::ParserDriver &driver, const YYLTYPE &loc) {
         return trx::ast::SourceLocation{.file = driver.currentFile(), .line = static_cast<std::size_t>(loc.first_line), .column = static_cast<std::size_t>(loc.first_column)};
     }
 }

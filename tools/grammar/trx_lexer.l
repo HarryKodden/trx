@@ -8,6 +8,8 @@
 %x SQLMODE
 
 %{
+#define YY_NO_UNPUT 1
+
 #include "trx/parsing/ParserDriver.h"
 #include "trx/diagnostics/DiagnosticEngine.h"
 #include "trx_parser.hpp"
