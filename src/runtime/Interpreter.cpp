@@ -1,3 +1,6 @@
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#pragma GCC diagnostic ignored "-Wunused-result"
+
 #include "trx/runtime/Interpreter.h"
 
 #include "trx/ast/Expressions.h"
@@ -187,6 +190,7 @@ JsonValue evaluateFunctionCall(const trx::ast::FunctionCallExpression &call, Exe
 }
 
 JsonValue evaluateBuiltin(const trx::ast::BuiltinExpression &builtin, ExecutionContext &context) {
+    (void)context;
     switch (builtin.value) {
         case trx::ast::BuiltinValue::SqlCode:
             // Placeholder for SQL error code
@@ -453,8 +457,8 @@ void executeSort(const trx::ast::SortStatement &sortStmt, ExecutionContext &cont
     auto &array = arrayValue.asArray();
     if (sortStmt.keys.empty()) return; // No sort
     // For simplicity, sort by first key ascending
-    const auto &key = sortStmt.keys.front();
-    std::sort(array.begin(), array.end(), [&](const JsonValue &a, const JsonValue &b) {
+    const auto key = sortStmt.keys.front();
+    std::sort(array.begin(), array.end(), [key](const JsonValue &a, const JsonValue &b) {
         if (!a.isObject() || !b.isObject()) return false;
         const auto &objA = a.asObject();
         const auto &objB = b.asObject();
@@ -486,7 +490,7 @@ void executeSystem(const trx::ast::SystemStatement &systemStmt, ExecutionContext
     if (std::holds_alternative<std::string>(cmd.data)) {
         const std::string &command = std::get<std::string>(cmd.data);
         int result = std::system(command.c_str());
-        // Perhaps store the result somewhere, but for now, just execute
+        (void)result;
     } else {
         throw std::runtime_error("System command must be a string");
     }
@@ -534,6 +538,7 @@ void executeValidate(const trx::ast::ValidateStatement &validateStmt, ExecutionC
 }
 
 void executeSql(const trx::ast::SqlStatement &sqlStmt, ExecutionContext &context) {
+    (void)context;
     switch (sqlStmt.kind) {
         case trx::ast::SqlStatementKind::ExecImmediate:
             std::cout << "SQL EXEC: " << sqlStmt.sql << std::endl;
@@ -657,7 +662,7 @@ JsonValue Interpreter::execute(const std::string &procedureName, const JsonValue
         throw std::runtime_error("Procedure input and output types must match");
     }
 
-    ExecutionContext context{*this};
+    ExecutionContext context{*this, {}};
     context.variables.emplace("input", input);
     context.variables.emplace("output", JsonValue::object());
 

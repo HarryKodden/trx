@@ -23,6 +23,11 @@ struct JsonValue {
     explicit JsonValue(Object value);
     explicit JsonValue(Array value);
 
+    JsonValue(const JsonValue &) = default;
+    JsonValue(JsonValue &&) = default;
+    JsonValue &operator=(const JsonValue &) = default;
+    JsonValue &operator=(JsonValue &&) = default;
+
     static JsonValue object();
     static JsonValue array();
 
