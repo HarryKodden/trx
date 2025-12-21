@@ -668,29 +668,29 @@ format_decl
 
 procedure_decl
     : PROCEDURE identifier LPAREN parameter COMMA parameter RPAREN procedure_body
-      {
-          trx::ast::ProcedureDecl procedure;
-          procedure.name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)};
+        {
+            trx::ast::ProcedureDecl procedure;
+            procedure.name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)};
 
-          if ($4) {
-              procedure.input = driver.context().makeParameter(std::string($4), makeLocation(driver, @4));
-              std::free($4);
-          }
+            if ($4) {
+                procedure.input = driver.context().makeParameter(std::string($4), makeLocation(driver, @4));
+                std::free($4);
+            }
 
-          if ($6) {
-              procedure.output = driver.context().makeParameter(std::string($6), makeLocation(driver, @6));
-              std::free($6);
-          }
+            if ($6) {
+                procedure.output = driver.context().makeParameter(std::string($6), makeLocation(driver, @6));
+                std::free($6);
+            }
 
-          auto body = statementListFrom($8);
-          if (body) {
-              procedure.body = std::move(*body);
-              delete body;
-          }
+            auto body = statementListFrom($8);
+            if (body) {
+                procedure.body = std::move(*body);
+                delete body;
+            }
 
-          driver.context().addProcedure(std::move(procedure));
-          std::free($2);
-      }
+            driver.context().addProcedure(std::move(procedure));
+            std::free($2);
+        }
     ;
 
 procedure_body
@@ -713,48 +713,48 @@ block
 
 statement_list
     : statement
-      {
-          auto list = newStatementList();
-          auto stmt = statementFrom($1);
-          list->push_back(std::move(*stmt));
-          delete stmt;
-          $$ = list;
-      }
+        {
+            auto list = newStatementList();
+            auto stmt = statementFrom($1);
+            list->push_back(std::move(*stmt));
+            delete stmt;
+            $$ = list;
+        }
     | statement_list statement
-      {
-          auto list = statementListFrom($1);
-          auto stmt = statementFrom($2);
-          list->push_back(std::move(*stmt));
-          delete stmt;
-          $$ = list;
-      }
+        {
+            auto list = statementListFrom($1);
+            auto stmt = statementFrom($2);
+            list->push_back(std::move(*stmt));
+            delete stmt;
+            $$ = list;
+        }
     ;
 
 statement
     : assignment_statement
-      {
-          $$ = $1;
-      }
+        {
+            $$ = $1;
+        }
     | call_statement
-      {
-          $$ = $1;
-      }
-        | if_statement
-            {
-                    $$ = $1;
-            }
-        | while_statement
-            {
-                    $$ = $1;
-            }
-        | switch_statement
-            {
-                    $$ = $1;
-            }
-        | sql_statement
-            {
-                    $$ = $1;
-            }
+        {
+            $$ = $1;
+        }
+    | if_statement
+        {
+                $$ = $1;
+        }
+    | while_statement
+        {
+                $$ = $1;
+        }
+    | switch_statement
+        {
+                $$ = $1;
+        }
+    | sql_statement
+        {
+                $$ = $1;
+        }
     ;
 
 assignment_statement
