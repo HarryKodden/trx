@@ -5,6 +5,8 @@
 %option bison-locations
 %option warn
 
+%x SQLMODE
+
 %{
 #include "trx/parsing/ParserDriver.h"
 #include "trx/diagnostics/DiagnosticEngine.h"
@@ -66,17 +68,32 @@ IDENT        [A-Za-z_][A-Za-z0-9_]*
 PATH         [A-Za-z_][A-Za-z0-9_]*([.][A-Za-z0-9_]+)+
 NUMBER       (-?[0-9]+(\.[0-9]+)?)
 STRING       \"([^\"\\]|\\.)*\"
+SQLIDENT     [A-Za-z_][A-Za-z0-9_]*
+SQLPATH      {SQLIDENT}(\.{SQLIDENT})*
+SQLTEXT      [^\s:;]+
 
 %%
 
 {WHITESPACE}    { /* skip */ }
 {NEWLINE}       { ++YYLLOC.first_line; YYLLOC.last_line = YYLLOC.first_line; YYLLOC.first_column = 1; YYLLOC.last_column = 1; }
 
+[Ee][Xx][Ee][Cc][ \t]+[Ss][Qq][Ll]  {
+                    BEGIN(SQLMODE);
+                    return EXEC_SQL;
+                }
+
 [Ii][Nn][Cc][Ll][Uu][Dd][Ee]  { return INCLUDE; }
 [Cc][Oo][Nn][Ss][Tt][Aa][Nn][Tt] { return CONSTANT; }
 [Pp][Rr][Oo][Cc][Ee][Dd][Uu][Rr][Ee] { return PROCEDURE; }
 [Nn][Uu][Ll][Ll] { return NULL_K; }
 [Rr][Ee][Cc][Oo][Rr][Dd] { return RECORD; }
+[Ii][Ff] { return IF; }
+[Tt][Hh][Ee][Nn] { return THEN; }
+[Ee][Ll][Ss][Ee] { return ELSE; }
+[Ww][Hh][Ii][Ll][Ee] { return WHILE; }
+[Ss][Ww][Ii][Tt][Cc][Hh] { return SWITCH; }
+[Cc][Aa][Ss][Ee] { return CASE; }
+[Dd][Ee][Ff][Aa][Uu][Ll][Tt] { return DEFAULT; }
 [Tt][Rr][Uu][Ee] { return TRUE; }
 [Ff][Aa][Ll][Ss][Ee] { return FALSE; }
 [Aa][Nn][Dd] { return AND; }
@@ -103,6 +120,35 @@ STRING       \"([^\"\\]|\\.)*\"
 ">="            { return GE; }
 "<>"            { return NEQ; }
 "><"            { return NEQ2; }
+
+<SQLMODE>[ \t\r]+ {
+                    YYLVAL.text = duplicate_text(yytext, yyleng);
+                    return SQL_TEXT;
+                }
+<SQLMODE>\n+     {
+                    YYLLOC.first_line += yyleng;
+                    YYLLOC.last_line = YYLLOC.first_line;
+                    YYLLOC.first_column = 1;
+                    YYLLOC.last_column = 1;
+                    YYLVAL.text = duplicate_text(" ", 1);
+                    return SQL_TEXT;
+                }
+<SQLMODE>":"{SQLPATH} {
+                    YYLVAL.text = duplicate_text(yytext + 1, static_cast<std::size_t>(yyleng - 1));
+                    return SQL_VARIABLE;
+                }
+<SQLMODE>";"    {
+                    BEGIN(INITIAL);
+                    return SEMICOLON;
+                }
+<SQLMODE>{SQLTEXT} {
+                    YYLVAL.text = duplicate_text(yytext, yyleng);
+                    return SQL_TEXT;
+                }
+<SQLMODE>.      {
+                    YYLVAL.text = duplicate_text(yytext, 1);
+                    return SQL_TEXT;
+                }
 
 {STRING}        {
                     YYLVAL.text = duplicate_string_literal(yytext, yyleng);

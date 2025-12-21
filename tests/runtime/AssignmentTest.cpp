@@ -1,8 +1,11 @@
+#include "trx/ast/Nodes.h"
 #include "trx/ast/Statements.h"
 #include "trx/parsing/ParserDriver.h"
 #include "trx/runtime/Interpreter.h"
 
+#include <cstddef>
 #include <iostream>
+#include <initializer_list>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -33,6 +36,33 @@ const trx::ast::ProcedureDecl *findProcedure(const trx::ast::Module &module, std
         }
     }
     return nullptr;
+}
+
+const trx::ast::RecordDecl *findRecord(const trx::ast::Module &module, std::string_view name) {
+    for (const auto &declaration : module.declarations) {
+        if (const auto *record = std::get_if<trx::ast::RecordDecl>(&declaration)) {
+            if (record->name.name == name) {
+                return record;
+            }
+        }
+    }
+    return nullptr;
+}
+
+bool expectVariablePath(const trx::ast::VariableExpression &variable, std::initializer_list<std::string_view> segments) {
+    if (!expect(variable.path.size() == segments.size(), "variable path length mismatch")) {
+        return false;
+    }
+
+    std::size_t index = 0;
+    for (const auto expected : segments) {
+        if (!expect(variable.path[index].identifier == expected, "variable path segment mismatch")) {
+            return false;
+        }
+        ++index;
+    }
+
+    return true;
 }
 
 bool runCopyProcedureTest() {
@@ -309,6 +339,400 @@ bool runExpressionAstTests() {
     return true;
 }
 
+bool validateIfProcedure(const trx::ast::ProcedureDecl &procedure) {
+    if (!expect(!procedure.body.empty(), "branching procedure has no statements")) {
+        return false;
+    }
+
+    const auto *ifStmt = std::get_if<trx::ast::IfStatement>(&procedure.body.front().node);
+    if (!expect(ifStmt != nullptr, "branching first statement is not IF")) {
+        return false;
+    }
+
+    const auto *condition = std::get_if<trx::ast::BinaryExpression>(&ifStmt->condition->node);
+    if (!expect(condition != nullptr, "branching condition is not binary") ||
+        !expect(condition->op == trx::ast::BinaryOperator::Greater, "branching condition operator not Greater")) {
+        return false;
+    }
+
+    if (!expect(condition->lhs != nullptr, "branching condition lhs missing")) {
+        return false;
+    }
+
+    const auto *lhsVar = std::get_if<trx::ast::VariableExpression>(&condition->lhs->node);
+    if (!expect(lhsVar != nullptr, "branching lhs not variable") ||
+        !expect(lhsVar->path.size() == 2, "branching lhs variable path length")) {
+        return false;
+    }
+
+    const auto *rhsLiteral = std::get_if<trx::ast::LiteralExpression>(&condition->rhs->node);
+    const auto *rhsValue = rhsLiteral ? std::get_if<double>(&rhsLiteral->value) : nullptr;
+    if (!expect(rhsLiteral != nullptr && rhsValue != nullptr && *rhsValue == 0.0, "branching rhs literal not 0")) {
+        return false;
+    }
+
+    if (!expect(ifStmt->thenBranch.size() == 1, "branching then branch size incorrect") ||
+        !expect(ifStmt->elseBranch.size() == 1, "branching else branch size incorrect")) {
+        return false;
+    }
+
+    const auto *thenAssignment = std::get_if<trx::ast::AssignmentStatement>(&ifStmt->thenBranch.front().node);
+    if (!expect(thenAssignment != nullptr, "branching then statement not assignment")) {
+        return false;
+    }
+
+    const auto *elseAssignment = std::get_if<trx::ast::AssignmentStatement>(&ifStmt->elseBranch.front().node);
+    if (!expect(elseAssignment != nullptr, "branching else statement not assignment")) {
+        return false;
+    }
+
+    return true;
+}
+
+bool validateWhileProcedure(const trx::ast::ProcedureDecl &procedure) {
+    if (!expect(!procedure.body.empty(), "looping procedure has no statements")) {
+        return false;
+    }
+
+    const auto *whileStmt = std::get_if<trx::ast::WhileStatement>(&procedure.body.front().node);
+    if (!expect(whileStmt != nullptr, "looping first statement is not WHILE")) {
+        return false;
+    }
+
+    const auto *condition = std::get_if<trx::ast::BinaryExpression>(&whileStmt->condition->node);
+    if (!expect(condition != nullptr, "looping condition is not binary")) {
+        return false;
+    }
+
+    if (!expect(whileStmt->body.size() == 1, "looping body size incorrect")) {
+        return false;
+    }
+
+    const auto *assignment = std::get_if<trx::ast::AssignmentStatement>(&whileStmt->body.front().node);
+    if (!expect(assignment != nullptr, "looping body statement not assignment")) {
+        return false;
+    }
+
+    return true;
+}
+
+bool validateSwitchProcedure(const trx::ast::ProcedureDecl &procedure) {
+    if (!expect(!procedure.body.empty(), "switching procedure has no statements")) {
+        return false;
+    }
+
+    const auto *switchStmt = std::get_if<trx::ast::SwitchStatement>(&procedure.body.front().node);
+    if (!expect(switchStmt != nullptr, "switching first statement is not SWITCH")) {
+        return false;
+    }
+
+    if (!expect(switchStmt->cases.size() == 2, "switching cases size incorrect")) {
+        return false;
+    }
+
+    for (std::size_t index = 0; index < switchStmt->cases.size(); ++index) {
+        const auto &caseClause = switchStmt->cases[index];
+        if (!expect(caseClause.match != nullptr, "switching case match missing")) {
+            return false;
+        }
+        const auto *literal = std::get_if<trx::ast::LiteralExpression>(&caseClause.match->node);
+        const auto *value = literal ? std::get_if<double>(&literal->value) : nullptr;
+        if (!expect(literal != nullptr && value != nullptr && *value == static_cast<double>(index), "switching case literal mismatch")) {
+            return false;
+        }
+        if (!expect(caseClause.body.size() == 1, "switching case body size incorrect")) {
+            return false;
+        }
+        const auto *assignment = std::get_if<trx::ast::AssignmentStatement>(&caseClause.body.front().node);
+        if (!expect(assignment != nullptr, "switching case body not assignment")) {
+            return false;
+        }
+    }
+
+    if (!expect(switchStmt->defaultBranch.has_value(), "switching default branch missing")) {
+        return false;
+    }
+
+    if (!expect(switchStmt->defaultBranch->size() == 1, "switching default body size incorrect")) {
+        return false;
+    }
+
+    const auto *defaultAssignment = std::get_if<trx::ast::AssignmentStatement>(&switchStmt->defaultBranch->front().node);
+    if (!expect(defaultAssignment != nullptr, "switching default statement not assignment")) {
+        return false;
+    }
+
+    return true;
+}
+
+bool runControlStatementTests() {
+    constexpr const char *source = R"TRX(
+        RECORD SAMPLE {
+            VALUE INTEGER;
+            RESULT INTEGER;
+        }
+
+        PROCEDURE branching(SAMPLE, SAMPLE) {
+            IF input.VALUE > 0 THEN {
+                output.RESULT := input.VALUE;
+            } ELSE {
+                output.RESULT := 0;
+            }
+        }
+
+        PROCEDURE looping(SAMPLE, SAMPLE) {
+            WHILE input.VALUE > 0 {
+                output.RESULT := output.RESULT + 1;
+            }
+        }
+
+        PROCEDURE switching(SAMPLE, SAMPLE) {
+            SWITCH input.VALUE {
+                CASE 0 {
+                    output.RESULT := 0;
+                }
+                CASE 1 {
+                    output.RESULT := 1;
+                }
+                DEFAULT {
+                    output.RESULT := -1;
+                }
+            }
+        }
+    )TRX";
+
+    trx::parsing::ParserDriver driver;
+    if (!driver.parseString(source, "control_cases.trx")) {
+        reportDiagnostics(driver);
+        return false;
+    }
+
+    const auto *branching = findProcedure(driver.context().module(), "branching");
+    if (!expect(branching != nullptr, "branching procedure not found") ||
+        !validateIfProcedure(*branching)) {
+        return false;
+    }
+
+    const auto *looping = findProcedure(driver.context().module(), "looping");
+    if (!expect(looping != nullptr, "looping procedure not found") ||
+        !validateWhileProcedure(*looping)) {
+        return false;
+    }
+
+    const auto *switching = findProcedure(driver.context().module(), "switching");
+    if (!expect(switching != nullptr, "switching procedure not found") ||
+        !validateSwitchProcedure(*switching)) {
+        return false;
+    }
+
+    return true;
+}
+
+bool validateSqlProcedure(const trx::ast::ProcedureDecl &procedure) {
+    if (!expect(procedure.body.size() == 3, "sql procedure does not contain three statements")) {
+        return false;
+    }
+
+    const auto getSql = [&](std::size_t index) -> const trx::ast::SqlStatement * {
+        const auto *sql = std::get_if<trx::ast::SqlStatement>(&procedure.body[index].node);
+        if (!expect(sql != nullptr, "statement is not SQL")) {
+            return nullptr;
+        }
+        return sql;
+    };
+
+    const auto *selectStmt = getSql(0);
+    if (!selectStmt) {
+        return false;
+    }
+    if (!expect(selectStmt->sql == "SELECT NAME FROM CUSTOMERS WHERE ID = ?", "unexpected SELECT SQL text") ||
+        !expect(selectStmt->hostVariables.size() == 1, "SELECT host variable count mismatch") ||
+        !expectVariablePath(selectStmt->hostVariables.front(), {"input", "VALUE"})) {
+        return false;
+    }
+
+    const auto *deleteStmt = getSql(1);
+    if (!deleteStmt) {
+        return false;
+    }
+    if (!expect(deleteStmt->sql == "DELETE FROM CUSTOMERS WHERE ID = ?", "unexpected DELETE SQL text") ||
+        !expect(deleteStmt->hostVariables.size() == 1, "DELETE host variable count mismatch") ||
+        !expectVariablePath(deleteStmt->hostVariables.front(), {"input", "VALUE"})) {
+        return false;
+    }
+
+    const auto *updateStmt = getSql(2);
+    if (!updateStmt) {
+        return false;
+    }
+    if (!expect(updateStmt->sql == "UPDATE CUSTOMERS SET NAME = ? WHERE ID = ?", "unexpected UPDATE SQL text") ||
+        !expect(updateStmt->hostVariables.size() == 2, "UPDATE host variable count mismatch")) {
+        return false;
+    }
+    if (!expectVariablePath(updateStmt->hostVariables[0], {"input", "NAME"}) ||
+        !expectVariablePath(updateStmt->hostVariables[1], {"input", "VALUE"})) {
+        return false;
+    }
+
+    return true;
+}
+
+bool validateCursorProcedure(const trx::ast::ProcedureDecl &procedure) {
+    if (!expect(procedure.body.size() == 4, "cursor procedure does not contain four statements")) {
+        return false;
+    }
+
+    const auto getSql = [&](std::size_t index) -> const trx::ast::SqlStatement * {
+        const auto *sql = std::get_if<trx::ast::SqlStatement>(&procedure.body[index].node);
+        if (!expect(sql != nullptr, "statement is not SQL")) {
+            return nullptr;
+        }
+        return sql;
+    };
+
+    const auto *declareStmt = getSql(0);
+    if (!declareStmt) {
+        return false;
+    }
+    if (!expect(declareStmt->kind == trx::ast::SqlStatementKind::DeclareCursor, "DECLARE statement kind mismatch") ||
+        !expect(declareStmt->identifier == "mycursor", "DECLARE cursor name mismatch") ||
+        !expect(declareStmt->sql == "DECLARE mycursor CURSOR FOR SELECT NAME, VALUE FROM CUSTOMERS WHERE ID = ?", "DECLARE SQL text mismatch") ||
+        !expect(declareStmt->hostVariables.size() == 1, "DECLARE host variable count mismatch") ||
+        !expectVariablePath(declareStmt->hostVariables.front(), {"input", "VALUE"})) {
+        return false;
+    }
+
+    const auto *openStmt = getSql(1);
+    if (!openStmt) {
+        return false;
+    }
+    if (!expect(openStmt->kind == trx::ast::SqlStatementKind::OpenCursor, "OPEN statement kind mismatch") ||
+        !expect(openStmt->identifier == "mycursor", "OPEN cursor name mismatch") ||
+        !expect(openStmt->sql == "OPEN mycursor", "OPEN SQL text mismatch") ||
+        !expect(openStmt->hostVariables.empty(), "OPEN should not have host variables")) {
+        return false;
+    }
+
+    const auto *fetchStmt = getSql(2);
+    if (!fetchStmt) {
+        return false;
+    }
+    if (!expect(fetchStmt->kind == trx::ast::SqlStatementKind::FetchCursor, "FETCH statement kind mismatch") ||
+        !expect(fetchStmt->identifier == "mycursor", "FETCH cursor name mismatch") ||
+        !expect(fetchStmt->sql == "FETCH mycursor INTO ?, ?", "FETCH SQL text mismatch") ||
+        !expect(fetchStmt->hostVariables.size() == 2, "FETCH host variable count mismatch") ||
+        !expectVariablePath(fetchStmt->hostVariables[0], {"output", "NAME"}) ||
+        !expectVariablePath(fetchStmt->hostVariables[1], {"output", "RESULT"})) {
+        return false;
+    }
+
+    const auto *closeStmt = getSql(3);
+    if (!closeStmt) {
+        return false;
+    }
+    if (!expect(closeStmt->kind == trx::ast::SqlStatementKind::CloseCursor, "CLOSE statement kind mismatch") ||
+        !expect(closeStmt->identifier == "mycursor", "CLOSE cursor name mismatch") ||
+        !expect(closeStmt->sql == "CLOSE mycursor", "CLOSE SQL text mismatch") ||
+        !expect(closeStmt->hostVariables.empty(), "CLOSE should not have host variables")) {
+        return false;
+    }
+
+    return true;
+}
+
+bool runSqlStatementTests() {
+    constexpr const char *source = R"TRX(
+        RECORD SAMPLE {
+            VALUE INTEGER;
+            NAME CHAR(64);
+            RESULT INTEGER;
+        }
+
+        PROCEDURE sql_examples(SAMPLE, SAMPLE) {
+            EXEC SQL SELECT NAME FROM CUSTOMERS WHERE ID = :input.VALUE;
+            EXEC SQL DELETE FROM CUSTOMERS WHERE ID = :input.VALUE;
+            EXEC SQL UPDATE CUSTOMERS SET NAME = :input.NAME WHERE ID = :input.VALUE;
+        }
+
+        PROCEDURE cursor_examples(SAMPLE, SAMPLE) {
+            EXEC SQL DECLARE mycursor CURSOR FOR SELECT NAME, VALUE FROM CUSTOMERS WHERE ID = :input.VALUE;
+            EXEC SQL OPEN mycursor;
+            EXEC SQL FETCH mycursor INTO :output.NAME, :output.RESULT;
+            EXEC SQL CLOSE mycursor;
+        }
+    )TRX";
+
+    trx::parsing::ParserDriver driver;
+    if (!driver.parseString(source, "sql_examples.trx")) {
+        reportDiagnostics(driver);
+        return false;
+    }
+
+    const auto *procedure = findProcedure(driver.context().module(), "sql_examples");
+    if (!expect(procedure != nullptr, "sql_examples procedure not found")) {
+        return false;
+    }
+
+    if (!validateSqlProcedure(*procedure)) {
+        return false;
+    }
+
+    const auto *cursorProcedure = findProcedure(driver.context().module(), "cursor_examples");
+    if (!expect(cursorProcedure != nullptr, "cursor_examples procedure not found")) {
+        return false;
+    }
+
+    return validateCursorProcedure(*cursorProcedure);
+}
+
+bool runRecordFormatTests() {
+    constexpr const char *source = R"TRX(
+        RECORD FORMATTEST {
+            CUSTOMER_ID INTEGER;
+            FULL_NAME CHAR(64) json:"fullName,omitempty";
+            STATUS_FLAG CHAR(16) json:"status_flag";
+        }
+    )TRX";
+
+    trx::parsing::ParserDriver driver;
+    if (!driver.parseString(source, "record_format.trx")) {
+        reportDiagnostics(driver);
+        return false;
+    }
+
+    const auto *record = findRecord(driver.context().module(), "FORMATTEST");
+    if (!expect(record != nullptr, "FORMATTEST record not found")) {
+        return false;
+    }
+
+    if (!expect(record->fields.size() == 3, "FORMATTEST field count mismatch")) {
+        return false;
+    }
+
+    const auto &idField = record->fields[0];
+    if (!expect(idField.jsonName == "customer_id", "CUSTOMER_ID default json name mismatch") ||
+        !expect(!idField.jsonOmitEmpty, "CUSTOMER_ID default omitEmpty should be false") ||
+        !expect(!idField.hasExplicitJsonName, "CUSTOMER_ID should not be marked explicit")) {
+        return false;
+    }
+
+    const auto &nameField = record->fields[1];
+    if (!expect(nameField.jsonName == "fullName", "FULL_NAME json name mismatch") ||
+        !expect(nameField.jsonOmitEmpty, "FULL_NAME omitempty not detected") ||
+        !expect(nameField.hasExplicitJsonName, "FULL_NAME should be marked explicit")) {
+        return false;
+    }
+
+    const auto &statusField = record->fields[2];
+    if (!expect(statusField.jsonName == "status_flag", "STATUS_FLAG json name mismatch") ||
+        !expect(!statusField.jsonOmitEmpty, "STATUS_FLAG omitempty should be false") ||
+        !expect(statusField.hasExplicitJsonName, "STATUS_FLAG should be marked explicit")) {
+        return false;
+    }
+
+    return true;
+}
+
 } // namespace
 
 int main() {
@@ -317,6 +741,18 @@ int main() {
     }
 
     if (!runExpressionAstTests()) {
+        return 1;
+    }
+
+    if (!runControlStatementTests()) {
+        return 1;
+    }
+
+    if (!runSqlStatementTests()) {
+        return 1;
+    }
+
+    if (!runRecordFormatTests()) {
         return 1;
     }
 

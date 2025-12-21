@@ -43,6 +43,9 @@ struct RecordField {
     long length{0};
     short dimension{1};
     std::optional<short> scale{};
+    std::string jsonName;
+    bool jsonOmitEmpty{false};
+    bool hasExplicitJsonName{false};
 };
 
 struct RecordDecl {

@@ -69,11 +69,18 @@ struct SqlStatement {
 
 struct IfStatement;
 struct WhileStatement;
+struct SwitchCase;
+struct SwitchStatement;
 struct SortStatement;
 struct BlockStatement;
 
 struct Statement;
 using StatementList = std::vector<Statement>;
+
+struct SwitchCase {
+    ExpressionPtr match;
+    StatementList body;
+};
 
 struct IfStatement {
     ExpressionPtr condition;
@@ -84,6 +91,12 @@ struct IfStatement {
 struct WhileStatement {
     ExpressionPtr condition;
     StatementList body;
+};
+
+struct SwitchStatement {
+    ExpressionPtr selector;
+    std::vector<SwitchCase> cases;
+    std::optional<StatementList> defaultBranch;
 };
 
 struct SortKey {
@@ -111,6 +124,7 @@ struct Statement {
                               SqlStatement,
                               IfStatement,
                               WhileStatement,
+                              SwitchStatement,
                               SortStatement,
                               BlockStatement>;
     Node node;
