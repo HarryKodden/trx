@@ -4,6 +4,7 @@
 #include "trx/ast/Statements.h"
 #include "trx/parsing/ParserDriver.h"
 #include "trx/runtime/Interpreter.h"
+#include "trx/diagnostics/DiagnosticEngine.h"
 
 #include <algorithm>
 #include <atomic>
@@ -13,6 +14,7 @@
 #include <csignal>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 #include <map>
 #include <netinet/in.h>
@@ -21,6 +23,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -36,6 +39,62 @@ void handleSignal(int signum) {
     if (signum == SIGINT) {
         g_stopServer.store(true);
     }
+}
+
+bool hasTrxExtension(const std::filesystem::path &path) {
+    const std::string extension = path.extension().string();
+    std::string lowered = extension;
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return lowered == ".trx";
+}
+
+std::vector<std::filesystem::path> collectSourceFiles(const std::filesystem::path &root, std::error_code &error) {
+    std::vector<std::filesystem::path> files;
+    error.clear();
+
+    if (!std::filesystem::exists(root, error)) {
+        if (!error) {
+            error = std::make_error_code(std::errc::no_such_file_or_directory);
+        }
+        return files;
+    }
+
+    if (std::filesystem::is_regular_file(root, error)) {
+        if (!error) {
+            files.push_back(root);
+        }
+        return files;
+    }
+
+    if (error) {
+        return files;
+    }
+
+    if (!std::filesystem::is_directory(root, error)) {
+        if (!error) {
+            error = std::make_error_code(std::errc::invalid_argument);
+        }
+        return files;
+    }
+
+    std::filesystem::recursive_directory_iterator it(root, std::filesystem::directory_options::skip_permission_denied, error);
+    std::filesystem::recursive_directory_iterator end;
+    while (!error && it != end) {
+        const auto &entry = *it;
+        if (entry.is_regular_file(error) && !error && hasTrxExtension(entry.path())) {
+            files.push_back(entry.path());
+        }
+        if (error) {
+            break;
+        }
+        it.increment(error);
+    }
+
+    if (!error) {
+        std::sort(files.begin(), files.end());
+    }
+
+    return files;
 }
 
 struct HttpRequest {
@@ -530,7 +589,7 @@ std::string buildProceduresPayload(const std::vector<std::string> &procedures, c
 }
 
 std::string buildSwaggerIndexPage() {
-    return R"(<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/><title>TRX Swagger Playground</title><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.11.0/swagger-ui.css" integrity="sha512-p0p7N6D+PfYZ7RUTpujISiFDUFxu05oig3NbS1Ry6j3TDIrS9KuX3sI5Yucs5cjox96D65gis6pZeRAEIJ5zsQ==" crossorigin="anonymous" referrerpolicy="no-referrer"/></head><body><div id="swagger-ui"></div><script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.11.0/swagger-ui-bundle.js" integrity="sha512-5H14TyBC0bYKT1eZqUPVHtV6nRvWmvMRGsiE9zraFMvx6bMpiKFFitvolG/GpNZgbf+168Q5e0siJmq9hw3rhw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script><script>window.onload=function(){SwaggerUIBundle({url:'/swagger.json',dom_id:'#swagger-ui'});};</script></body></html>)";
+    return R"(<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/><title>TRX Swagger Playground</title><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.11.0/swagger-ui.css"/></head><body><div id="swagger-ui"></div><script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.11.0/swagger-ui-bundle.js"></script><script>window.onload=function(){SwaggerUIBundle({url:'/swagger.json',dom_id:'#swagger-ui'});};</script></body></html>)";
 }
 
 bool isCallableProcedure(const trx::ast::ProcedureDecl &procedure) {
@@ -613,7 +672,7 @@ HttpResponse handleExecute(const HttpRequest &request,
     }
 }
 
-HttpResponse handleOptions(const HttpRequest &request) {
+HttpResponse handleOptions(const HttpRequest &) {
     HttpResponse response;
     response.status = 204;
     response.contentType = "text/plain";
@@ -626,19 +685,60 @@ HttpResponse handleOptions(const HttpRequest &request) {
 } // namespace
 
 int runSwaggerServer(const std::filesystem::path &sourcePath, ServeOptions options) {
-    trx::parsing::ParserDriver driver;
-    if (!driver.parseFile(sourcePath)) {
-        std::cerr << "Failed to parse " << sourcePath << "\n";
-        for (const auto &diagnostic : driver.diagnostics().messages()) {
-            std::cerr << "  - " << diagnostic.message << "\n";
+
+    std::cout << "[DEBUG] Resolved source path: " << sourcePath << std::endl;
+    std::error_code fsError;
+    const auto sourceFiles = collectSourceFiles(sourcePath, fsError);
+    std::cout << "[DEBUG] collectSourceFiles found " << sourceFiles.size() << " .trx files" << std::endl;
+    if (fsError) {
+        std::cerr << "Unable to load TRX sources from " << sourcePath << ": " << fsError.message() << "\n";
+        return 1;
+    }
+
+    if (sourceFiles.empty()) {
+        std::error_code dirCheck;
+        const bool isDir = std::filesystem::is_directory(sourcePath, dirCheck);
+        if (!dirCheck && isDir) {
+            std::cerr << "No TRX files found under " << sourcePath << "\n";
+        } else {
+            std::cerr << "No TRX source found at " << sourcePath << "\n";
         }
         return 1;
+    }
+
+    trx::parsing::ParserDriver driver;
+    for (const auto &file : sourceFiles) {
+        const std::size_t baseline = driver.diagnostics().messages().size();
+        if (!driver.parseFile(file)) {
+            std::cerr << "Failed to parse " << file << "\n";
+            const auto &diagnostics = driver.diagnostics().messages();
+            for (std::size_t index = baseline; index < diagnostics.size(); ++index) {
+                const auto &diag = diagnostics[index];
+                std::cerr << "  - ";
+                if (!diag.location.file.empty()) {
+                    std::cerr << diag.location.file;
+                    if (diag.location.line != 0) {
+                        std::cerr << ':' << diag.location.line;
+                        if (diag.location.column != 0) {
+                            std::cerr << ':' << diag.location.column;
+                        }
+                    }
+                    std::cerr << ' ';
+                }
+                std::cerr << diag.message << "\n";
+            }
+            return 1;
+        }
     }
 
     const auto &module = driver.context().module();
     const auto callableProcedures = collectCallableProcedures(module);
     if (callableProcedures.empty()) {
-        std::cerr << "No callable procedures (with matching input/output) were found in " << sourcePath << "\n";
+        if (sourceFiles.size() == 1) {
+            std::cerr << "No callable procedures (with matching input/output) were found in " << sourceFiles.front() << "\n";
+        } else {
+            std::cerr << "No callable procedures (with matching input/output) were found across " << sourceFiles.size() << " TRX files under " << sourcePath << "\n";
+        }
         return 1;
     }
 
@@ -646,8 +746,10 @@ int runSwaggerServer(const std::filesystem::path &sourcePath, ServeOptions optio
     procedureNames.reserve(callableProcedures.size());
     std::map<std::string, const trx::ast::ProcedureDecl *> procedureLookup;
     for (const auto *procedure : callableProcedures) {
-        procedureNames.push_back(procedure->name.name);
-        procedureLookup.emplace(procedure->name.name, procedure);
+        auto [_, inserted] = procedureLookup.insert_or_assign(procedure->name.name, procedure);
+        if (inserted) {
+            procedureNames.push_back(procedure->name.name);
+        }
     }
 
     std::string defaultProcedure = procedureNames.front();
@@ -664,6 +766,8 @@ int runSwaggerServer(const std::filesystem::path &sourcePath, ServeOptions optio
     const std::string swaggerSpec = buildSwaggerSpec(procedureNames);
     const std::string swaggerIndex = buildSwaggerIndexPage();
     const std::string proceduresPayload = buildProceduresPayload(procedureNames, defaultProcedure);
+
+    std::cout << "Loaded " << procedureNames.size() << " procedure(s) from " << sourceFiles.size() << " source file(s)." << std::endl;
 
     std::signal(SIGINT, handleSignal);
 

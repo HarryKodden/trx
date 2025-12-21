@@ -11,7 +11,7 @@ namespace {
 void printUsage() {
     std::cerr << "Usage:\n";
     std::cerr << "  trx_compiler <source.trx>\n";
-    std::cerr << "  trx_compiler serve [--port <port>] [--procedure <name>] <source.trx>\n";
+    std::cerr << "  trx_compiler serve [--port <port>] [--procedure <name>] <source path>\n";
 }
 
 } // namespace
