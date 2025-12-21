@@ -19,6 +19,9 @@ target_include_directories(trx_core
 find_package(BISON 3.7 REQUIRED)
 find_package(FLEX REQUIRED)
 
+# Find SQLite3
+find_package(SQLite3 REQUIRED)
+
 BISON_TARGET(TRXParser
   ${CMAKE_CURRENT_SOURCE_DIR}/../tools/grammar/trx_parser.y
   ${CMAKE_CURRENT_BINARY_DIR}/trx_parser.cpp
@@ -54,6 +57,8 @@ if(TARGET FLEX::Flex)
 elseif(FLEX_LIBRARIES)
   target_link_libraries(trx_core PRIVATE ${FLEX_LIBRARIES})
 endif()
+
+target_link_libraries(trx_core PRIVATE SQLite::SQLite3)
 
 add_executable(trx_compiler
   cli/main.cpp

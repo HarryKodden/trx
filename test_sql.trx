@@ -1,0 +1,19 @@
+RECORD SAMPLE {
+    VALUE INTEGER;
+    RESULT INTEGER;
+    FLAG BOOLEAN;
+    TEXT CHAR(32);
+}
+
+PROCEDURE test_sql(SAMPLE, SAMPLE) {
+    EXEC SQL CREATE TABLE test_table (id INTEGER, name TEXT);
+    EXEC SQL INSERT INTO test_table VALUES (1, 'Hello');
+    EXEC SQL INSERT INTO test_table VALUES (2, 'World');
+    
+    EXEC SQL DECLARE test_cursor CURSOR FOR SELECT id, name FROM test_table;
+    EXEC SQL OPEN test_cursor;
+    
+    EXEC SQL FETCH test_cursor INTO :output.VALUE, :output.TEXT;
+    
+    EXEC SQL CLOSE test_cursor;
+}

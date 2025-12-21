@@ -6,19 +6,16 @@
 #include "trx/ast/Expressions.h"
 #include "trx/ast/Statements.h"
 
-#include <stdexcept>
-#include <unordered_map>
-#include <utility>
-#include <variant>
+#include <sqlite3.h>
+#include <iostream>
 #include <chrono>
 #include <ctime>
-#include <cmath>
 #include <algorithm>
-#include <ostream>
-#include <iostream>
-#include <cstdlib>
+#include <cmath>
 
 namespace trx::runtime {
+
+
 
 namespace {
 
@@ -33,6 +30,8 @@ Overloaded(Ts...) -> Overloaded<Ts...>;
 struct ExecutionContext {
     const Interpreter &interpreter;
     std::unordered_map<std::string, JsonValue> variables;
+    bool returned{false};
+    std::optional<JsonValue> returnValue;
 };
 
 JsonValue evaluateExpression(const trx::ast::ExpressionPtr &expression, ExecutionContext &context);
@@ -40,6 +39,9 @@ JsonValue resolveVariableValue(const trx::ast::VariableExpression &variable, Exe
 JsonValue &resolveVariableTarget(const trx::ast::VariableExpression &variable, ExecutionContext &context);
 
 void executeStatements(const trx::ast::StatementList &statements, ExecutionContext &context);
+
+void extractHostVariables(std::string &sql, ExecutionContext &context, std::unordered_map<std::string, JsonValue> &hostVars);
+void bindHostVariables(sqlite3_stmt *stmt, const std::unordered_map<std::string, JsonValue> &hostVars);
 
 JsonValue evaluateLiteral(const trx::ast::LiteralExpression &literal) {
     return std::visit(
@@ -397,17 +399,6 @@ JsonValue &resolveVariableTarget(const trx::ast::VariableExpression &variable, E
     return *current;
 }
 
-const trx::ast::ProcedureDecl *findProcedure(const trx::ast::Module &module, const std::string &name) {
-    for (const auto &declaration : module.declarations) {
-        if (const auto *procedure = std::get_if<trx::ast::ProcedureDecl>(&declaration)) {
-            if (procedure->name.name == name) {
-                return procedure;
-            }
-        }
-    }
-    return nullptr;
-}
-
 void executeAssignment(const trx::ast::AssignmentStatement &assignment, ExecutionContext &context) {
     JsonValue value = evaluateExpression(assignment.value, context);
     JsonValue &target = resolveVariableTarget(assignment.target, context);
@@ -537,32 +528,174 @@ void executeValidate(const trx::ast::ValidateStatement &validateStmt, ExecutionC
     // Perhaps set a variable, but for now, ignore
 }
 
+void extractHostVariables(std::string &sql, ExecutionContext &context, std::unordered_map<std::string, JsonValue> &hostVars) {
+    size_t pos = 0;
+    int paramIndex = 1;
+    while ((pos = sql.find(':', pos)) != std::string::npos) {
+        size_t end = pos + 1;
+        while (end < sql.size() && (std::isalnum(sql[end]) || sql[end] == '.' || sql[end] == '_')) {
+            ++end;
+        }
+        if (end > pos + 1) {
+            std::string varName = sql.substr(pos + 1, end - pos - 1);
+            // Replace :var with ? in SQL
+            sql.replace(pos, end - pos, "?");
+            
+            // Extract the variable value
+            try {
+                trx::ast::VariableSegment segment{varName, std::nullopt};
+                trx::ast::VariableExpression varExpr{{segment}};
+                JsonValue value = resolveVariableValue(varExpr, context);
+                hostVars[std::to_string(paramIndex)] = value;
+                ++paramIndex;
+            } catch (const std::exception &) {
+                // Variable not found, keep as is
+            }
+        }
+        pos = end;
+    }
+}
+
+void bindHostVariables(sqlite3_stmt *stmt, const std::unordered_map<std::string, JsonValue> &hostVars) {
+    for (const auto &[param, value] : hostVars) {
+        int paramIndex = std::stoi(param);
+        std::visit(Overloaded{
+            [&](std::nullptr_t) { sqlite3_bind_null(stmt, paramIndex); },
+            [&](bool b) { sqlite3_bind_int(stmt, paramIndex, b ? 1 : 0); },
+            [&](double d) { sqlite3_bind_double(stmt, paramIndex, d); },
+            [&](const std::string &s) { sqlite3_bind_text(stmt, paramIndex, s.c_str(), -1, SQLITE_TRANSIENT); },
+            [&](const JsonValue::Object &) { /* Objects not supported */ },
+            [&](const JsonValue::Array &) { /* Arrays not supported */ }
+        }, value.data);
+    }
+}
+std::string extractSelectFromDeclare(const std::string &declareSql) {
+    std::string upper = declareSql;
+    std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
+    
+    // Find "CURSOR FOR"
+    size_t cursorForPos = upper.find("CURSOR FOR");
+    if (cursorForPos == std::string::npos) {
+        return declareSql; // Fallback
+    }
+    
+    // Skip "CURSOR FOR" and whitespace
+    size_t selectPos = cursorForPos + 10; // length of "CURSOR FOR"
+    while (selectPos < declareSql.size() && std::isspace(declareSql[selectPos])) {
+        ++selectPos;
+    }
+    
+    return declareSql.substr(selectPos);
+}
 void executeSql(const trx::ast::SqlStatement &sqlStmt, ExecutionContext &context) {
-    (void)context;
     switch (sqlStmt.kind) {
-        case trx::ast::SqlStatementKind::ExecImmediate:
+        case trx::ast::SqlStatementKind::ExecImmediate: {
+            std::string sql = sqlStmt.sql;
+            // Replace host variables with ? placeholders for binding
+            std::unordered_map<std::string, JsonValue> hostVars;
+            extractHostVariables(sql, context, hostVars);
+            
+            sqlite3_stmt *stmt = nullptr;
+            if (sqlite3_prepare_v2(context.interpreter.db(), sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+                throw std::runtime_error("Failed to prepare SQL: " + std::string(sqlite3_errmsg(context.interpreter.db())));
+            }
+            
+            // Bind parameters
+            bindHostVariables(stmt, hostVars);
+            
+            // Execute the statement
+            int rc = sqlite3_step(stmt);
+            if (rc != SQLITE_DONE && rc != SQLITE_ROW) {
+                std::string error = sqlite3_errmsg(context.interpreter.db());
+                sqlite3_finalize(stmt);
+                throw std::runtime_error("SQL execution failed: " + error);
+            }
+            
+            sqlite3_finalize(stmt);
             std::cout << "SQL EXEC: " << sqlStmt.sql << std::endl;
             break;
-        case trx::ast::SqlStatementKind::DeclareCursor:
-            std::cout << "SQL DECLARE CURSOR: " << sqlStmt.identifier << " AS " << sqlStmt.sql << std::endl;
+        }
+        
+        case trx::ast::SqlStatementKind::DeclareCursor: {
+            std::string sql = sqlStmt.sql;
+            // Extract the SELECT statement from "DECLARE name CURSOR FOR select_stmt"
+            std::string selectSql = extractSelectFromDeclare(sqlStmt.sql);
+            
+            std::unordered_map<std::string, JsonValue> hostVars;
+            extractHostVariables(selectSql, context, hostVars);
+            
+            sqlite3_stmt *stmt = nullptr;
+            if (sqlite3_prepare_v2(context.interpreter.db(), selectSql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+                throw std::runtime_error("Failed to prepare cursor SQL: " + std::string(sqlite3_errmsg(context.interpreter.db())));
+            }
+            
+            // Bind parameters for cursor declaration
+            bindHostVariables(stmt, hostVars);
+            
+            context.interpreter.cursors()[sqlStmt.identifier] = stmt;
+            std::cout << "SQL DECLARE CURSOR: " << sqlStmt.identifier << " AS " << selectSql << std::endl;
             break;
-        case trx::ast::SqlStatementKind::OpenCursor:
+        }
+        
+        case trx::ast::SqlStatementKind::OpenCursor: {
+            auto it = context.interpreter.cursors().find(sqlStmt.identifier);
+            if (it == context.interpreter.cursors().end()) {
+                throw std::runtime_error("Cursor not found: " + sqlStmt.identifier);
+            }
+            // Cursor is already prepared, just reset it
+            sqlite3_reset(it->second);
             std::cout << "SQL OPEN CURSOR: " << sqlStmt.identifier << std::endl;
             break;
-        case trx::ast::SqlStatementKind::FetchCursor:
-            std::cout << "SQL FETCH CURSOR: " << sqlStmt.identifier;
-            for (const auto &var : sqlStmt.hostVariables) {
-                if (!var.path.empty()) {
-                    std::cout << " INTO " << var.path[0].identifier;
-                }
+        }
+        
+        case trx::ast::SqlStatementKind::FetchCursor: {
+            auto it = context.interpreter.cursors().find(sqlStmt.identifier);
+            if (it == context.interpreter.cursors().end()) {
+                throw std::runtime_error("Cursor not found: " + sqlStmt.identifier);
             }
-            std::cout << std::endl;
+            
+            sqlite3_stmt *stmt = it->second;
+            int rc = sqlite3_step(stmt);
+            if (rc == SQLITE_ROW) {
+                // Bind results to host variables
+                for (size_t i = 0; i < sqlStmt.hostVariables.size() && i < static_cast<size_t>(sqlite3_column_count(stmt)); ++i) {
+                    const auto &var = sqlStmt.hostVariables[i];
+                    JsonValue value;
+                    switch (sqlite3_column_type(stmt, i)) {
+                        case SQLITE_INTEGER:
+                            value = JsonValue(static_cast<double>(sqlite3_column_int(stmt, i)));
+                            break;
+                        case SQLITE_FLOAT:
+                            value = JsonValue(sqlite3_column_double(stmt, i));
+                            break;
+                        case SQLITE_TEXT:
+                            value = JsonValue(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, i))));
+                            break;
+                        case SQLITE_NULL:
+                        default:
+                            value = nullptr;
+                            break;
+                    }
+                    resolveVariableTarget(var, context) = value;
+                }
+                std::cout << "SQL FETCH CURSOR: " << sqlStmt.identifier << " - row found" << std::endl;
+            } else if (rc == SQLITE_DONE) {
+                std::cout << "SQL FETCH CURSOR: " << sqlStmt.identifier << " - no more rows" << std::endl;
+            } else {
+                throw std::runtime_error("Cursor fetch failed: " + std::string(sqlite3_errmsg(context.interpreter.db())));
+            }
             break;
-        case trx::ast::SqlStatementKind::CloseCursor:
+        }
+        
+        case trx::ast::SqlStatementKind::CloseCursor: {
+            auto it = context.interpreter.cursors().find(sqlStmt.identifier);
+            if (it != context.interpreter.cursors().end()) {
+                sqlite3_reset(it->second);
+            }
             std::cout << "SQL CLOSE CURSOR: " << sqlStmt.identifier << std::endl;
             break;
+        }
     }
-    // In a real implementation, interact with database
 }
 
 void executeStatement(const trx::ast::Statement &statement, ExecutionContext &context) {
@@ -646,13 +779,57 @@ bool operator!=(const JsonValue &lhs, const JsonValue &rhs) {
 }
 
 Interpreter::Interpreter(const trx::ast::Module &module)
-    : module_{module} {}
+    : module_{module} {
+    for (const auto &decl : module.declarations) {
+        if (std::holds_alternative<ast::ProcedureDecl>(decl)) {
+            const auto &proc = std::get<ast::ProcedureDecl>(decl);
+            procedures_[proc.name.name] = &proc;
+        }
+    }
+    
+    // Open in-memory SQLite database
+    if (sqlite3_open(":memory:", &db_) != SQLITE_OK) {
+        throw std::runtime_error("Failed to open SQLite database");
+    }
+    
+    // Create sample tables for testing
+    const char *initSql = R"(
+        CREATE TABLE CUSTOMERS (
+            ID INTEGER PRIMARY KEY,
+            NAME TEXT,
+            VALUE INTEGER
+        );
+        INSERT INTO CUSTOMERS VALUES (1, 'Alice', 100);
+        INSERT INTO CUSTOMERS VALUES (2, 'Bob', 200);
+    )";
+    
+    char *errMsg = nullptr;
+    if (sqlite3_exec(db_, initSql, nullptr, nullptr, &errMsg) != SQLITE_OK) {
+        std::string error = errMsg;
+        sqlite3_free(errMsg);
+        throw std::runtime_error("Failed to initialize database: " + error);
+    }
+}
+
+Interpreter::~Interpreter() {
+    // Clean up cursors
+    for (auto &[name, stmt] : cursors_) {
+        sqlite3_finalize(stmt);
+    }
+    cursors_.clear();
+    
+    if (db_) {
+        sqlite3_close(db_);
+        db_ = nullptr;
+    }
+}
 
 JsonValue Interpreter::execute(const std::string &procedureName, const JsonValue &input) const {
-    const auto *procedure = findProcedure(module_, procedureName);
-    if (!procedure) {
+    auto it = procedures_.find(procedureName);
+    if (it == procedures_.end()) {
         throw std::runtime_error("Procedure not found: " + procedureName);
     }
+    const auto *procedure = it->second;
 
     if (!procedure->input || !procedure->output) {
         throw std::runtime_error("Procedure must declare both input and output parameters");
@@ -662,7 +839,7 @@ JsonValue Interpreter::execute(const std::string &procedureName, const JsonValue
         throw std::runtime_error("Procedure input and output types must match");
     }
 
-    ExecutionContext context{*this, {}};
+    ExecutionContext context{*this, {}, false, std::nullopt};
     context.variables.emplace("input", input);
     context.variables.emplace("output", JsonValue::object());
 

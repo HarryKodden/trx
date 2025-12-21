@@ -1,5 +1,6 @@
 #include "SwaggerServer.h"
 #include "trx/parsing/ParserDriver.h"
+#include "trx/runtime/Interpreter.h"
 
 #include <filesystem>
 #include <iostream>
@@ -11,6 +12,7 @@ namespace {
 void printUsage() {
     std::cerr << "Usage:\n";
     std::cerr << "  trx_compiler <source.trx>\n";
+    std::cerr << "  trx_compiler [--procedure <name>] <source.trx>\n";
     std::cerr << "  trx_compiler serve [--port <port>] [--procedure <name>] <source path>\n";
 }
 
@@ -25,6 +27,7 @@ int main(int argc, char *argv[]) {
     bool serveMode = false;
     trx::cli::ServeOptions serveOptions;
     std::optional<std::filesystem::path> sourcePath;
+    std::optional<std::string> procedureToExecute;
 
     for (int index = 1; index < argc; ++index) {
         const std::string argument{argv[index]};
@@ -50,7 +53,7 @@ int main(int argc, char *argv[]) {
             continue;
         }
         if ((argument == "--procedure" || argument == "-r") && index + 1 < argc) {
-            serveOptions.procedure = std::string{argv[++index]};
+            procedureToExecute = std::string{argv[++index]};
             continue;
         }
         if (!sourcePath) {
@@ -81,5 +84,19 @@ int main(int argc, char *argv[]) {
     }
 
     std::cout << "Parsed " << sourcePath->string() << " successfully\n";
+
+    if (procedureToExecute) {
+        trx::runtime::Interpreter interpreter{driver.context().module()};
+        try {
+            trx::runtime::JsonValue input = trx::runtime::JsonValue::object(); // For now, empty input
+            trx::runtime::JsonValue result = interpreter.execute(*procedureToExecute, input);
+            std::cout << "Executed procedure '" << *procedureToExecute << "' successfully\n";
+            std::cout << "Result: " << result << "\n";
+        } catch (const std::exception &e) {
+            std::cerr << "Error executing procedure '" << *procedureToExecute << "': " << e.what() << "\n";
+            return 1;
+        }
+    }
+
     return 0;
 }

@@ -1,0 +1,18 @@
+INCLUDE user.inc;
+
+CONSTANT PI 3.14159;
+CONSTANT AUTHOR "TRX Rewrite";
+
+RECORD ADDRESS {
+    STREET CHAR(64);
+    ZIP INTEGER;
+}
+
+RECORD CUSTOMER {
+    NAME CHAR(64);
+    HOME ADDRESS;
+}
+
+PROCEDURE copy_customer(CUSTOMER, CUSTOMER) {
+    output := input;
+}

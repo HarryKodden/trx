@@ -13,6 +13,7 @@ RUN apt-get update \
        flex \
        bison \
        ninja-build \
+       libsqlite3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
@@ -33,6 +34,13 @@ FROM ubuntu:24.04 AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        libstdc++6 \
+       libsqlite3-0 \
+       libsqlite3-dev \
+       cmake \
+       ninja-build \
+       build-essential \
+       flex \
+       bison \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /workspace/build/src/trx_compiler /usr/local/bin/trx_compiler
