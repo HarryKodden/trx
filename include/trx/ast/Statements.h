@@ -49,6 +49,10 @@ struct BatchStatement {
     std::optional<VariableExpression> argument;
 };
 
+struct ThrowStatement {
+    ExpressionPtr value;
+};
+
 struct CallStatement {
     std::string name;
     std::optional<VariableExpression> input;
@@ -72,11 +76,7 @@ struct SqlStatement {
     std::vector<VariableExpression> hostVariables; // fetch target list
 };
 
-struct IfStatement;
-struct WhileStatement;
-struct SwitchCase;
-struct SwitchStatement;
-struct SortStatement;
+struct TryCatchStatement;
 struct BlockStatement;
 
 struct Statement;
@@ -114,6 +114,12 @@ struct SortStatement {
     std::vector<SortKey> keys;
 };
 
+struct TryCatchStatement {
+    StatementList tryBlock;
+    std::optional<VariableExpression> exceptionVar;
+    StatementList catchBlock;
+};
+
 struct BlockStatement {
     StatementList statements;
 };
@@ -126,6 +132,8 @@ struct Statement {
                               SystemStatement,
                               AssignmentStatement,
                               BatchStatement,
+                              ThrowStatement,
+                              TryCatchStatement,
                               CallStatement,
                               SqlStatement,
                               IfStatement,

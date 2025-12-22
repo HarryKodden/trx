@@ -28,6 +28,7 @@ public:
     void beginTransaction() override;
     void commitTransaction() override;
     void rollbackTransaction() override;
+    bool isInTransaction() override;
 
 private:
     DatabaseConfig config_;

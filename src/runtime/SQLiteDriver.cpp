@@ -238,6 +238,10 @@ void SQLiteDriver::beginTransaction() {
         executeSql("BEGIN TRANSACTION");
     }
 
+bool SQLiteDriver::isInTransaction() {
+    return sqlite3_get_autocommit(db_) == 0;
+}
+
 void SQLiteDriver::commitTransaction() {
         executeSql("COMMIT");
     }

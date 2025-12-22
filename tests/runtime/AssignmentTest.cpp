@@ -2,6 +2,7 @@
 #include "trx/ast/Statements.h"
 #include "trx/parsing/ParserDriver.h"
 #include "trx/runtime/Interpreter.h"
+#include "trx/runtime/TrxException.h"
 
 #include <cstddef>
 #include <iostream>
@@ -13,9 +14,9 @@
 namespace {
 
 void reportDiagnostics(const trx::parsing::ParserDriver &driver) {
-    std::cerr << "Parsing failed:\n";
+    std::cerr << "Parsing failed with " << driver.diagnostics().messages().size() << " diagnostic messages:\n";
     for (const auto &diagnostic : driver.diagnostics().messages()) {
-        std::cerr << "  - " << diagnostic.message << "\n";
+        std::cerr << "  - " << diagnostic.message << " at " << diagnostic.location.file << ":" << diagnostic.location.line << ":" << diagnostic.location.column << "\n";
     }
 }
 
@@ -66,28 +67,33 @@ bool expectVariablePath(const trx::ast::VariableExpression &variable, std::initi
 }
 
 bool runCopyProcedureTest() {
+    std::cout << "Running copy procedure test...\n";
     constexpr const char *source = R"TRX(
-        RECORD ADDRESS {
+        TYPE ADDRESS {
             STREET CHAR(64);
             ZIP INTEGER;
         }
 
-        RECORD CUSTOMER {
+        TYPE CUSTOMER {
             NAME CHAR(64);
             HOME ADDRESS;
         }
 
-        PROCEDURE copy_customer(CUSTOMER, CUSTOMER) {
+        FUNCTION copy_customer(CUSTOMER): CUSTOMER {
             output := input;
         }
     )TRX";
 
+    std::cout << "Source code to parse:\n" << source << "\n";
+
     trx::parsing::ParserDriver driver;
+    std::cout << "Parsing source...\n";
     if (!driver.parseString(source, "copy_customer.trx")) {
         reportDiagnostics(driver);
         return false;
     }
 
+    std::cout << "Parsing successful. Checking module contents...\n";
     trx::runtime::Interpreter interpreter(driver.context().module(), nullptr); // Use default SQLite driver
 
     trx::runtime::JsonValue::Object home;
@@ -100,6 +106,7 @@ bool runCopyProcedureTest() {
 
     trx::runtime::JsonValue input{std::move(customer)};
 
+    std::cout << "Executing procedure...\n";
     const auto output = interpreter.execute("copy_customer", input);
 
     if (output != input) {
@@ -107,6 +114,7 @@ bool runCopyProcedureTest() {
         return false;
     }
 
+    std::cout << "Copy procedure test passed.\n";
     return true;
 }
 
@@ -281,36 +289,42 @@ bool validateStringLiteralExpression(const trx::ast::ProcedureDecl &procedure) {
 }
 
 bool runExpressionAstTests() {
+    std::cout << "Running expression AST tests...\n";
     constexpr const char *source = R"TRX(
-        RECORD SAMPLE {
+        TYPE SAMPLE {
             VALUE INTEGER;
             RESULT INTEGER;
             FLAG BOOLEAN;
             TEXT CHAR(32);
         }
 
-        PROCEDURE numeric_case(SAMPLE, SAMPLE) {
+        FUNCTION numeric_case(SAMPLE): SAMPLE {
             output.RESULT := input.VALUE * 2 + 5;
         }
 
-        PROCEDURE boolean_case(SAMPLE, SAMPLE) {
+        FUNCTION boolean_case(SAMPLE): SAMPLE {
             output.FLAG := input.VALUE > 10 AND NOT (input.VALUE = 0);
         }
 
-        PROCEDURE bool_literal_case(SAMPLE, SAMPLE) {
+        FUNCTION bool_literal_case(SAMPLE): SAMPLE {
             output.FLAG := TRUE OR FALSE;
         }
 
-        PROCEDURE text_case(SAMPLE, SAMPLE) {
+        FUNCTION text_case(SAMPLE): SAMPLE {
             output.TEXT := "constant";
         }
     )TRX";
 
+    std::cout << "Source code to parse:\n" << source << "\n";
+
     trx::parsing::ParserDriver driver;
+    std::cout << "Parsing source...\n";
     if (!driver.parseString(source, "expression_cases.trx")) {
         reportDiagnostics(driver);
         return false;
     }
+
+    std::cout << "Parsing successful. Validating procedures...\n";
 
     const auto *numeric = findProcedure(driver.context().module(), "numeric_case");
     if (!expect(numeric != nullptr, "numeric_case procedure not found") ||
@@ -467,12 +481,12 @@ bool validateSwitchProcedure(const trx::ast::ProcedureDecl &procedure) {
 
 bool runControlStatementTests() {
     constexpr const char *source = R"TRX(
-        RECORD SAMPLE {
+        TYPE SAMPLE {
             VALUE INTEGER;
             RESULT INTEGER;
         }
 
-        PROCEDURE branching(SAMPLE, SAMPLE) {
+        FUNCTION branching(SAMPLE): SAMPLE {
             IF input.VALUE > 0 THEN {
                 output.RESULT := input.VALUE;
             } ELSE {
@@ -480,13 +494,13 @@ bool runControlStatementTests() {
             }
         }
 
-        PROCEDURE looping(SAMPLE, SAMPLE) {
+        FUNCTION looping(SAMPLE): SAMPLE {
             WHILE input.VALUE > 0 {
                 output.RESULT := output.RESULT + 1;
             }
         }
 
-        PROCEDURE switching(SAMPLE, SAMPLE) {
+        FUNCTION switching(SAMPLE): SAMPLE {
             SWITCH input.VALUE {
                 CASE 0 {
                     output.RESULT := 0;
@@ -642,19 +656,19 @@ bool validateCursorProcedure(const trx::ast::ProcedureDecl &procedure) {
 
 bool runSqlStatementTests() {
     constexpr const char *source = R"TRX(
-        RECORD SAMPLE {
+        TYPE SAMPLE {
             VALUE INTEGER;
             NAME CHAR(64);
             RESULT INTEGER;
         }
 
-        PROCEDURE sql_examples(SAMPLE, SAMPLE) {
+        FUNCTION sql_examples(SAMPLE): SAMPLE {
             EXEC SQL SELECT NAME FROM CUSTOMERS WHERE ID = :input.VALUE;
             EXEC SQL DELETE FROM CUSTOMERS WHERE ID = :input.VALUE;
             EXEC SQL UPDATE CUSTOMERS SET NAME = :input.NAME WHERE ID = :input.VALUE;
         }
 
-        PROCEDURE cursor_examples(SAMPLE, SAMPLE) {
+        FUNCTION cursor_examples(SAMPLE): SAMPLE {
             EXEC SQL DECLARE mycursor CURSOR FOR SELECT NAME, VALUE FROM CUSTOMERS WHERE ID = :input.VALUE;
             EXEC SQL OPEN mycursor;
             EXEC SQL FETCH mycursor INTO :output.NAME, :output.RESULT;
@@ -687,19 +701,19 @@ bool runSqlStatementTests() {
 
 bool runCallStatementTests() {
     constexpr const char *source = R"TRX(
-        RECORD SAMPLE {
+        TYPE SAMPLE {
             VALUE INTEGER;
             RESULT INTEGER;
         }
 
-        PROCEDURE inner(SAMPLE, SAMPLE) {
+        FUNCTION inner(SAMPLE): SAMPLE {
         }
 
-        PROCEDURE outer(SAMPLE, SAMPLE) {
+        FUNCTION outer(SAMPLE): SAMPLE {
             output := CALL inner(input);
         }
 
-        PROCEDURE outer_no_arg(SAMPLE, SAMPLE) {
+        FUNCTION outer_no_arg(SAMPLE): SAMPLE {
             output := CALL inner(NULL);
         }
     )TRX";
@@ -768,9 +782,148 @@ bool runCallStatementTests() {
     return true;
 }
 
+bool runExceptionHandlingTests() {
+    std::cout << "Running exception handling tests...\n";
+
+    // Test THROW statement parsing
+    constexpr const char *throwSource = R"TRX(
+        FUNCTION test_throw() {
+            THROW "error message";
+        }
+    )TRX";
+
+    trx::parsing::ParserDriver throwDriver;
+    if (!throwDriver.parseString(throwSource, "throw_test.trx")) {
+        reportDiagnostics(throwDriver);
+        return false;
+    }
+
+    const auto *throwProc = findProcedure(throwDriver.context().module(), "test_throw");
+    if (!expect(throwProc != nullptr, "test_throw procedure not found")) {
+        return false;
+    }
+
+    if (!expect(throwProc->body.size() == 1, "test_throw should have one statement")) {
+        return false;
+    }
+
+    const auto *throwStmt = std::get_if<trx::ast::ThrowStatement>(&throwProc->body.front().node);
+    if (!expect(throwStmt != nullptr, "test_throw statement is not THROW")) {
+        return false;
+    }
+
+    // Test TRY/CATCH statement parsing
+    constexpr const char *tryCatchSource = R"TRX(
+        FUNCTION test_try_catch() {
+            TRY {
+                THROW "test error";
+            } CATCH (ex) {
+                trace("caught");
+            }
+        }
+    )TRX";
+
+    trx::parsing::ParserDriver tryCatchDriver;
+    if (!tryCatchDriver.parseString(tryCatchSource, "try_catch_test.trx")) {
+        reportDiagnostics(tryCatchDriver);
+        return false;
+    }
+
+    const auto *tryCatchProc = findProcedure(tryCatchDriver.context().module(), "test_try_catch");
+    if (!expect(tryCatchProc != nullptr, "test_try_catch procedure not found")) {
+        return false;
+    }
+
+    if (!expect(tryCatchProc->body.size() == 1, "test_try_catch should have one statement")) {
+        return false;
+    }
+
+    const auto *tryCatchStmt = std::get_if<trx::ast::TryCatchStatement>(&tryCatchProc->body.front().node);
+    if (!expect(tryCatchStmt != nullptr, "test_try_catch statement is not TRY/CATCH")) {
+        return false;
+    }
+
+    if (!expect(tryCatchStmt->tryBlock.size() == 1, "try block should have one statement")) {
+        return false;
+    }
+
+    if (!expect(tryCatchStmt->catchBlock.size() == 1, "catch block should have one statement")) {
+        return false;
+    }
+
+    if (!expect(tryCatchStmt->exceptionVar.has_value(), "exception variable should be present")) {
+        return false;
+    }
+
+    if (!expect(tryCatchStmt->exceptionVar->path.back().identifier == "ex", "exception variable name mismatch")) {
+        return false;
+    }
+
+    // Test exception execution
+    std::cout << "Testing exception execution...\n";
+    trx::runtime::Interpreter interpreter(throwDriver.context().module(), nullptr);
+
+    try {
+        trx::runtime::JsonValue input = trx::runtime::JsonValue::object();
+        interpreter.execute("test_throw", input);
+        return expect(false, "THROW should have thrown an exception");
+    } catch (const trx::runtime::TrxException &e) {
+        if (!expect(e.getErrorType() == "ThrowException", "Exception type should be ThrowException")) {
+            return false;
+        }
+        if (!expect(std::string(e.what()) == "Exception thrown by THROW statement", "Exception message mismatch")) {
+            return false;
+        }
+    }
+
+    // Test TRY/CATCH execution
+    trx::runtime::Interpreter tryCatchInterpreter(tryCatchDriver.context().module(), nullptr);
+
+    try {
+        trx::runtime::JsonValue input = trx::runtime::JsonValue::object();
+        trx::runtime::JsonValue result = tryCatchInterpreter.execute("test_try_catch", input);
+        // Should succeed - exception was caught
+    } catch (const std::exception &e) {
+        return expect(false, std::string("TRY/CATCH should not throw: ") + e.what());
+    }
+
+    // Test runtime exception (division by zero)
+    constexpr const char *divisionSource = R"TRX(
+        FUNCTION test_division() {
+            result := 10 / 0;
+        }
+    )TRX";
+
+    trx::parsing::ParserDriver divisionDriver;
+    if (!divisionDriver.parseString(divisionSource, "division_test.trx")) {
+        reportDiagnostics(divisionDriver);
+        return false;
+    }
+
+    trx::runtime::Interpreter divisionInterpreter(divisionDriver.context().module(), nullptr);
+
+    try {
+        trx::runtime::JsonValue input = trx::runtime::JsonValue::object();
+        divisionInterpreter.execute("test_division", input);
+        return expect(false, "Division by zero should throw an exception");
+    } catch (const trx::runtime::TrxArithmeticException &e) {
+        if (!expect(e.getErrorType() == "ArithmeticError", "Exception type should be ArithmeticError")) {
+            return false;
+        }
+        if (!expect(std::string(e.what()) == "Division by zero", "Exception message mismatch")) {
+            return false;
+        }
+    } catch (const std::exception &e) {
+        return expect(false, std::string("Wrong exception type thrown: ") + typeid(e).name());
+    }
+
+    std::cout << "Exception handling tests passed.\n";
+    return true;
+}
+
 bool runRecordFormatTests() {
     constexpr const char *source = R"TRX(
-        RECORD FORMATTEST {
+        TYPE FORMATTEST {
             CUSTOMER_ID INTEGER;
             FULL_NAME CHAR(64) json:"fullName,omitempty";
             STATUS_FLAG CHAR(16) json:"status_flag";
@@ -819,29 +972,43 @@ bool runRecordFormatTests() {
 } // namespace
 
 int main() {
+    std::cout << "Starting AssignmentTest suite...\n";
+
     if (!runCopyProcedureTest()) {
+        std::cerr << "Copy procedure test failed.\n";
         return 1;
     }
 
     if (!runExpressionAstTests()) {
+        std::cerr << "Expression AST tests failed.\n";
         return 1;
     }
 
     if (!runControlStatementTests()) {
+        std::cerr << "Control statement tests failed.\n";
         return 1;
     }
 
     if (!runSqlStatementTests()) {
+        std::cerr << "SQL statement tests failed.\n";
         return 1;
     }
 
     if (!runCallStatementTests()) {
+        std::cerr << "Call statement tests failed.\n";
+        return 1;
+    }
+
+    if (!runExceptionHandlingTests()) {
+        std::cerr << "Exception handling tests failed.\n";
         return 1;
     }
 
     if (!runRecordFormatTests()) {
+        std::cerr << "Record format tests failed.\n";
         return 1;
     }
 
+    std::cout << "All tests passed!\n";
     return 0;
 }

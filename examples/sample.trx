@@ -3,12 +3,12 @@ INCLUDE user.inc;
 CONSTANT PI 3.14159;
 CONSTANT APP_NAME "TRX Interpreter";
 
-record ADDRESS {
+TYPE ADDRESS {
     STREET CHAR(64);
     ZIP INTEGER;
 }
 
-record PERSON {
+TYPE PERSON {
     ID INTEGER;
     NAME CHAR(64);
     AGE INTEGER;
@@ -16,15 +16,15 @@ record PERSON {
     SALARY DECIMAL(10,2);
 }
 
-record EMPLOYEE {
+TYPE EMPLOYEE {
     DEPARTMENT CHAR(32);
 }
 
-function inner() {
+FUNCTION inner() {
     trace('Hello world');
 }
 
-function process_employee(PERSON) : PERSON {
+FUNCTION process_employee(PERSON) : PERSON {
     output := input;
 
     IF input.ACTIVE THEN {
@@ -35,7 +35,7 @@ function process_employee(PERSON) : PERSON {
 
     inner();
 
-    WHILE input.SALARY < 50000 {
+    WHILE output.SALARY < 50000 {
         output.SALARY := output.SALARY + 1000;
     }
 
@@ -44,6 +44,6 @@ function process_employee(PERSON) : PERSON {
     }
 }
 
-function calculate_bonus(PERSON) : PERSON {
+FUNCTION calculate_bonus(PERSON) : PERSON {
     output.SALARY := input.SALARY * 1.1;
 }

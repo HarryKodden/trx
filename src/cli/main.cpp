@@ -13,7 +13,8 @@ void printUsage() {
     std::cerr << "Usage:\n";
     std::cerr << "  trx_compiler <source.trx>\n";
     std::cerr << "  trx_compiler [--procedure <name>] [--db-type <type>] [--db-connection <conn>] <source.trx>\n";
-    std::cerr << "  trx_compiler serve [--port <port>] [--procedure <name>] [--db-type <type>] [--db-connection <conn>] <source path>\n";
+    std::cerr << "  trx_compiler serve [--port <port>] [--procedure <name>] [--db-type <type>] [--db-connection <conn>] [source paths...]\n";
+    std::cerr << "    If no source paths are provided, all .trx files in the current directory are used.\n";
     std::cerr << "\nDatabase options:\n";
     std::cerr << "  --db-type <type>        Database type: sqlite, postgresql, odbc (default: sqlite)\n";
     std::cerr << "  --db-connection <conn>  Database connection string/path (default: :memory: for sqlite)\n";
@@ -29,7 +30,7 @@ int main(int argc, char *argv[]) {
 
     bool serveMode = false;
     trx::cli::ServeOptions serveOptions;
-    std::optional<std::filesystem::path> sourcePath;
+    std::vector<std::filesystem::path> sourcePaths;
     std::optional<std::string> procedureToExecute;
     trx::runtime::DatabaseConfig dbConfig;
     dbConfig.type = trx::runtime::DatabaseType::SQLITE;
@@ -87,13 +88,11 @@ int main(int argc, char *argv[]) {
             }
             continue;
         }
-        if (!sourcePath) {
-            sourcePath = std::filesystem::path{argument};
-            continue;
+        if (argument.starts_with('-')) {
+            std::cerr << "Unexpected argument: " << argument << "\n";
+            return 1;
         }
-
-        std::cerr << "Unexpected argument: " << argument << "\n";
-        return 1;
+        sourcePaths.push_back(std::filesystem::path{argument});
     }
 
     // Check environment variables for database configuration if not set via command line
@@ -117,26 +116,34 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if (!sourcePath) {
+    if (serveMode) {
+        if (sourcePaths.empty()) {
+            sourcePaths.push_back(".");
+        }
+        serveOptions.dbConfig = dbConfig;
+        return trx::cli::runSwaggerServer(sourcePaths, serveOptions);
+    }
+
+    if (sourcePaths.empty()) {
         std::cerr << "Missing TRX source file\n";
         printUsage();
         return 1;
     }
-
-    if (serveMode) {
-        serveOptions.dbConfig = dbConfig;
-        return trx::cli::runSwaggerServer(*sourcePath, serveOptions);
+    if (sourcePaths.size() > 1) {
+        std::cerr << "Only one source file supported for compilation\n";
+        return 1;
     }
+    auto sourcePath = sourcePaths[0];
 
     trx::parsing::ParserDriver driver;
-    if (!driver.parseFile(*sourcePath)) {
+    if (!driver.parseFile(sourcePath)) {
         for (const auto &diagnostic : driver.diagnostics().messages()) {
             std::cerr << diagnostic.message << "\n";
         }
         return 1;
     }
 
-    std::cout << "Parsed " << sourcePath->string() << " successfully\n";
+    std::cout << "Parsed " << sourcePath.string() << " successfully\n";
 
     if (procedureToExecute) {
         auto dbDriver = trx::runtime::createDatabaseDriver(dbConfig);

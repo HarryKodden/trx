@@ -33,6 +33,11 @@ pkg_check_modules(ODBC REQUIRED odbc)
 target_link_libraries(trx_core PRIVATE ${ODBC_LIBRARIES})
 target_include_directories(trx_core PRIVATE ${ODBC_INCLUDE_DIRS})
 
+# Find PostgreSQL
+pkg_check_modules(POSTGRESQL REQUIRED libpq)
+target_link_libraries(trx_core PRIVATE ${POSTGRESQL_LIBRARIES})
+target_include_directories(trx_core PRIVATE ${POSTGRESQL_INCLUDE_DIRS})
+
 BISON_TARGET(TRXParser
   ${CMAKE_CURRENT_SOURCE_DIR}/../tools/grammar/trx_parser.y
   ${CMAKE_CURRENT_BINARY_DIR}/trx_parser.cpp
@@ -69,7 +74,7 @@ elseif(FLEX_LIBRARIES)
   target_link_libraries(trx_core PRIVATE ${FLEX_LIBRARIES})
 endif()
 
-target_link_libraries(trx_core PRIVATE SQLite::SQLite3 ${ODBC_LIBRARIES})
+target_link_libraries(trx_core PRIVATE SQLite::SQLite3 ${ODBC_LIBRARIES} ${POSTGRESQL_LIBRARIES})
 
 add_executable(trx_compiler
   cli/main.cpp

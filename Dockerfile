@@ -14,6 +14,7 @@ RUN apt-get update \
        bison \
        ninja-build \
        libsqlite3-dev \
+       libpq-dev \
        unixodbc-dev \
        pkg-config \
     && rm -rf /var/lib/apt/lists/*
@@ -37,6 +38,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        libstdc++6 \
        libsqlite3-0 \
+       libpq5 \
        libsqlite3-dev \
        cmake \
        ninja-build \
@@ -49,7 +51,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /workspace/build/src/trx_compiler /usr/local/bin/trx_compiler
-COPY examples /workspace/examples
+
+WORKDIR /workspace
 
 ENTRYPOINT ["/usr/local/bin/trx_compiler"]
 CMD ["--help"]

@@ -15,6 +15,6 @@ struct ServeOptions {
     trx::runtime::DatabaseConfig dbConfig;
 };
 
-int runSwaggerServer(const std::filesystem::path &sourcePath, ServeOptions options);
+int runSwaggerServer(const std::vector<std::filesystem::path> &sourcePaths, ServeOptions options);
 
 } // namespace trx::cli

@@ -88,7 +88,7 @@ SQLTEXT      [^\s:;]+
 [Ii][Nn][Cc][Ll][Uu][Dd][Ee]  { return INCLUDE; }
 [Cc][Oo][Nn][Ss][Tt][Aa][Nn][Tt] { return CONSTANT; }
 [Ff][Uu][Nn][Cc][Tt][Ii][Oo][Nn] { return FUNCTION; }
-[Rr][Ee][Cc][Oo][Rr][Dd] { return RECORD; }
+[Tt][Yy][Pp][Ee] { return TYPE; }
 [Nn][Uu][Ll][Ll] { return NULL_K; }
 [Ii][Ff] { return IF; }
 [Tt][Hh][Ee][Nn] { return THEN; }
@@ -97,6 +97,10 @@ SQLTEXT      [^\s:;]+
 [Ss][Ww][Ii][Tt][Cc][Hh] { return SWITCH; }
 [Cc][Aa][Ss][Ee] { return CASE; }
 [Dd][Ee][Ff][Aa][Uu][Ll][Tt] { return DEFAULT; }
+[Cc][Aa][Ll][Ll] { return CALL; }
+[Tt][Rr][Yy] { return TRY; }
+[Cc][Aa][Tt][Cc][Hh] { return CATCH; }
+[Tt][Hh][Rr][Oo][Ww] { return THROW; }
 [Tt][Rr][Uu][Ee] { return TRUE; }
 [Ff][Aa][Ll][Ss][Ee] { return FALSE; }
 [Aa][Nn][Dd] { return AND; }

@@ -25,4 +25,6 @@ services:
     environment:
       DATABASE_TYPE: ODBC
       DATABASE_CONNECTION_STRING: DRIVER={PostgreSQL Unicode};SERVER=postgres;PORT=5432;DATABASE=trx;UID=trx;PWD=password;
-    command: ["serve", "/workspace/examples/sample.trx"]
+    volumes:
+      - ./examples:/workspace/
+    command: ["serve"]

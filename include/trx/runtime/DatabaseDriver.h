@@ -91,6 +91,12 @@ public:
     virtual void createOrMigrateTable(const std::string& tableName, const std::vector<TableColumn>& columns) = 0;
 
     /**
+     * Check if currently in a transaction.
+     * @return true if in a transaction, false otherwise
+     */
+    virtual bool isInTransaction() = 0;
+
+    /**
      * Begin a transaction.
      */
     virtual void beginTransaction() = 0;

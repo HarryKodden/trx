@@ -8,11 +8,14 @@
 
 #include "trx/runtime/DatabaseDriver.h"
 #include "trx/runtime/SQLiteDriver.h"
+#include "trx/runtime/TrxException.h"
 #include <iostream>
 #include <chrono>
 #include <ctime>
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <string>
 
 namespace trx::runtime {
 
@@ -43,6 +46,13 @@ std::vector<SqlParameter> convertHostVarsToParams(const std::unordered_map<std::
     return params;
 }
 
+[[maybe_unused]] std::optional<std::string> formatSourceLocation(const trx::ast::SourceLocation& location) {
+    if (location.file.empty()) {
+        return std::nullopt;
+    }
+    return std::string(location.file) + ":" + std::to_string(location.line) + ":" + std::to_string(location.column);
+}
+
 JsonValue evaluateLiteral(const trx::ast::LiteralExpression &literal) {
     return std::visit(
         Overloaded{
@@ -60,19 +70,19 @@ JsonValue evaluateUnary(const trx::ast::UnaryExpression &unary, ExecutionContext
             if (std::holds_alternative<double>(operand.data)) {
                 return operand;
             }
-            throw std::runtime_error("Positive operator requires numeric operand");
+            throw TrxTypeException("Positive operator requires numeric operand");
         case trx::ast::UnaryOperator::Negate:
             if (std::holds_alternative<double>(operand.data)) {
                 return JsonValue(-std::get<double>(operand.data));
             }
-            throw std::runtime_error("Negate operator requires numeric operand");
+            throw TrxTypeException("Negate operator requires numeric operand");
         case trx::ast::UnaryOperator::Not:
             if (std::holds_alternative<bool>(operand.data)) {
                 return JsonValue(!std::get<bool>(operand.data));
             }
-            throw std::runtime_error("Not operator requires boolean operand");
+            throw TrxTypeException("Not operator requires boolean operand");
     }
-    throw std::runtime_error("Unknown unary operator");
+    throw TrxException("Unknown unary operator");
 }
 
 JsonValue evaluateBinary(const trx::ast::BinaryExpression &binary, ExecutionContext &context) {
@@ -87,29 +97,29 @@ JsonValue evaluateBinary(const trx::ast::BinaryExpression &binary, ExecutionCont
             if (std::holds_alternative<std::string>(lhs.data) && std::holds_alternative<std::string>(rhs.data)) {
                 return JsonValue(std::get<std::string>(lhs.data) + std::get<std::string>(rhs.data));
             }
-            throw std::runtime_error("Add operator requires compatible operands");
+            throw TrxTypeException("Add operator requires compatible operands");
         case trx::ast::BinaryOperator::Subtract:
             if (std::holds_alternative<double>(lhs.data) && std::holds_alternative<double>(rhs.data)) {
                 return JsonValue(std::get<double>(lhs.data) - std::get<double>(rhs.data));
             }
-            throw std::runtime_error("Subtract operator requires numeric operands");
+            throw TrxTypeException("Subtract operator requires numeric operands");
         case trx::ast::BinaryOperator::Multiply:
             if (std::holds_alternative<double>(lhs.data) && std::holds_alternative<double>(rhs.data)) {
                 return JsonValue(std::get<double>(lhs.data) * std::get<double>(rhs.data));
             }
-            throw std::runtime_error("Multiply operator requires numeric operands");
+            throw TrxTypeException("Multiply operator requires numeric operands");
         case trx::ast::BinaryOperator::Divide:
             if (std::holds_alternative<double>(lhs.data) && std::holds_alternative<double>(rhs.data)) {
                 double r = std::get<double>(rhs.data);
-                if (r == 0.0) throw std::runtime_error("Division by zero");
+                if (r == 0.0) throw TrxArithmeticException("Division by zero");
                 return JsonValue(std::get<double>(lhs.data) / r);
             }
-            throw std::runtime_error("Divide operator requires numeric operands");
+            throw TrxTypeException("Divide operator requires numeric operands");
         case trx::ast::BinaryOperator::Modulo:
             if (std::holds_alternative<double>(lhs.data) && std::holds_alternative<double>(rhs.data)) {
                 return JsonValue(std::fmod(std::get<double>(lhs.data), std::get<double>(rhs.data)));
             }
-            throw std::runtime_error("Modulo operator requires numeric operands");
+            throw TrxTypeException("Modulo operator requires numeric operands");
         case trx::ast::BinaryOperator::Equal:
             return JsonValue(lhs.data == rhs.data);
         case trx::ast::BinaryOperator::NotEqual:
@@ -450,8 +460,55 @@ void executeIf(const trx::ast::IfStatement &ifStmt, ExecutionContext &context) {
     }
 }
 
+void executeThrow(const trx::ast::ThrowStatement &throwStmt, ExecutionContext &context) {
+    JsonValue value = evaluateExpression(throwStmt.value, context);
+    throw TrxThrowException(value, std::nullopt);
+}
+
+void executeTryCatch(const trx::ast::TryCatchStatement &tryCatchStmt, ExecutionContext &context) {
+    try {
+        executeStatements(tryCatchStmt.tryBlock, context);
+    } catch (const TrxException &e) {
+        // Bind the exception to the catch variable if specified
+        if (tryCatchStmt.exceptionVar) {
+            JsonValue exceptionValue = JsonValue::object();
+            exceptionValue.asObject()["type"] = e.getErrorType();
+            exceptionValue.asObject()["message"] = std::string(e.what());
+            if (e.getSourceLocation()) {
+                exceptionValue.asObject()["location"] = *e.getSourceLocation();
+            }
+            
+            // If it's a TrxThrowException, include the thrown value
+            if (const TrxThrowException* throwEx = dynamic_cast<const TrxThrowException*>(&e)) {
+                exceptionValue.asObject()["value"] = throwEx->getThrownValue();
+            }
+            
+            context.variables[tryCatchStmt.exceptionVar->path.back().identifier] = exceptionValue;
+        }
+        executeStatements(tryCatchStmt.catchBlock, context);
+    }
+}
+
 void executeWhile(const trx::ast::WhileStatement &whileStmt, ExecutionContext &context) {
+    static const int MAX_ITERATIONS = []() {
+        const char* env = std::getenv("TRX_WHILE_MAX_ITERATIONS");
+        if (env) {
+            try {
+                int val = std::stoi(env);
+                return val > 0 ? val : 10000;
+            } catch (...) {
+                return 10000;
+            }
+        }
+        return 10000;
+    }();
+    
+    int iterations = 0;
     while (true) {
+        if (++iterations > MAX_ITERATIONS) {
+            throw std::runtime_error("WHILE loop exceeded maximum iterations (" + std::to_string(MAX_ITERATIONS) + ")");
+        }
+        
         JsonValue cond = evaluateExpression(whileStmt.condition, context);
         if (!std::holds_alternative<bool>(cond.data) || !std::get<bool>(cond.data)) break;
         executeStatements(whileStmt.body, context);
@@ -709,6 +766,8 @@ void executeStatement(const trx::ast::Statement &statement, ExecutionContext &co
     std::visit(
         Overloaded{
             [&](const trx::ast::AssignmentStatement &assignment) { executeAssignment(assignment, context); },
+            [&](const trx::ast::ThrowStatement &throwStmt) { executeThrow(throwStmt, context); },
+            [&](const trx::ast::TryCatchStatement &tryCatchStmt) { executeTryCatch(tryCatchStmt, context); },
             [&](const trx::ast::IfStatement &ifStmt) { executeIf(ifStmt, context); },
             [&](const trx::ast::WhileStatement &whileStmt) { executeWhile(whileStmt, context); },
             [&](const trx::ast::BlockStatement &block) { executeBlock(block, context); },
@@ -799,14 +858,27 @@ const trx::ast::ProcedureDecl* Interpreter::getProcedure(const std::string &name
 JsonValue Interpreter::execute(const std::string &procedureName, const JsonValue &input) const {
     auto it = procedures_.find(procedureName);
     if (it == procedures_.end()) {
-        throw std::runtime_error("Procedure not found: " + procedureName);
+        throw TrxException("Procedure not found: " + procedureName);
     }
     const auto *procedure = it->second;
 
     if (procedure->input && procedure->output) {
         if (procedure->input->type.name != procedure->output->type.name) {
-            throw std::runtime_error("Procedure input and output types must match");
+            throw TrxException("Procedure input and output types must match");
         }
+    }
+
+    // Check if we're already in a transaction
+    bool alreadyInTransaction = dbDriver_->isInTransaction();
+    std::string savepointName;
+    
+    if (alreadyInTransaction) {
+        // Use a savepoint for nested transaction
+        savepointName = "trx_savepoint_" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
+        dbDriver_->executeSql("SAVEPOINT " + savepointName);
+    } else {
+        // Begin a new transaction
+        dbDriver_->beginTransaction();
     }
 
     ExecutionContext context{*this, {}, false, std::nullopt};
@@ -815,8 +887,32 @@ JsonValue Interpreter::execute(const std::string &procedureName, const JsonValue
 
     try {
         executeStatements(procedure->body, context);
+        // Commit on successful completion
+        if (alreadyInTransaction) {
+            dbDriver_->executeSql("RELEASE SAVEPOINT " + savepointName);
+        } else {
+            dbDriver_->commitTransaction();
+        }
     } catch (const ReturnException &ret) {
         context.variables["output"] = ret.value;
+        // Commit on successful completion (even with return)
+        if (alreadyInTransaction) {
+            dbDriver_->executeSql("RELEASE SAVEPOINT " + savepointName);
+        } else {
+            dbDriver_->commitTransaction();
+        }
+    } catch (...) {
+        // Rollback on any exception
+        if (alreadyInTransaction) {
+            dbDriver_->executeSql("ROLLBACK TO SAVEPOINT " + savepointName);
+        } else {
+            try {
+                dbDriver_->rollbackTransaction();
+            } catch (...) {
+                // Ignore rollback errors
+            }
+        }
+        throw;
     }
 
     const auto outIt = context.variables.find("output");

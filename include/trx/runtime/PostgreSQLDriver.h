@@ -2,6 +2,8 @@
 
 #include "trx/runtime/DatabaseDriver.h"
 
+#include <postgresql/libpq-fe.h>
+
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -10,8 +12,6 @@ namespace trx::runtime {
 
 /**
  * PostgreSQL implementation of the DatabaseDriver interface.
- * Note: This is a skeleton implementation. In a real scenario, you would need
- * to install and link against libpq (PostgreSQL client library).
  */
 class PostgreSQLDriver : public DatabaseDriver {
 public:
@@ -29,11 +29,12 @@ public:
     void beginTransaction() override;
     void commitTransaction() override;
     void rollbackTransaction() override;
+    bool isInTransaction() override;
 
 private:
     DatabaseConfig config_;
-    void* conn_; // PGconn* in real implementation
-    std::unordered_map<std::string, void*> cursors_; // PGresult* in real implementation
+    PGconn* conn_;
+    std::unordered_map<std::string, PGresult*> cursors_;
 };
 
 } // namespace trx::runtime

@@ -690,20 +690,11 @@ std::string buildSwaggerIndexPage() {
     return R"(<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/><title>TRX Swagger Playground</title><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.11.0/swagger-ui.css"/></head><body><div id="swagger-ui"></div><script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.11.0/swagger-ui-bundle.js"></script><script>window.onload=function(){SwaggerUIBundle({url:'/swagger.json',dom_id:'#swagger-ui'});};</script></body></html>)";
 }
 
-bool isCallableProcedure(const trx::ast::ProcedureDecl &procedure) {
-    if (!procedure.input || !procedure.output) {
-        return false;
-    }
-    return procedure.input->type.name == procedure.output->type.name;
-}
-
 std::vector<const trx::ast::ProcedureDecl *> collectCallableProcedures(const trx::ast::Module &module) {
     std::vector<const trx::ast::ProcedureDecl *> procedures;
     for (const auto &decl : module.declarations) {
         if (const auto *proc = std::get_if<trx::ast::ProcedureDecl>(&decl)) {
-            if (isCallableProcedure(*proc)) {
-                procedures.push_back(proc);
-            }
+            procedures.push_back(proc);
         }
     }
     return procedures;
@@ -775,30 +766,34 @@ HttpResponse handleOptions(const HttpRequest &) {
 
 } // namespace
 
-int runSwaggerServer(const std::filesystem::path &sourcePath, ServeOptions options) {
+int runSwaggerServer(const std::vector<std::filesystem::path> &sourcePaths, ServeOptions options) {
 
-    std::cout << "[DEBUG] Resolved source path: " << sourcePath << std::endl;
-    std::error_code fsError;
-    const auto sourceFiles = collectSourceFiles(sourcePath, fsError);
-    std::cout << "[DEBUG] collectSourceFiles found " << sourceFiles.size() << " .trx files" << std::endl;
-    if (fsError) {
-        std::cerr << "Unable to load TRX sources from " << sourcePath << ": " << fsError.message() << "\n";
-        return 1;
-    }
-
-    if (sourceFiles.empty()) {
-        std::error_code dirCheck;
-        const bool isDir = std::filesystem::is_directory(sourcePath, dirCheck);
-        if (!dirCheck && isDir) {
-            std::cerr << "No TRX files found under " << sourcePath << "\n";
-        } else {
-            std::cerr << "No TRX source found at " << sourcePath << "\n";
+    std::vector<std::filesystem::path> allSourceFiles;
+    for (const auto &sourcePath : sourcePaths) {
+        std::cout << "[DEBUG] Resolving source path: " << sourcePath << std::endl;
+        std::error_code fsError;
+        const auto sourceFiles = collectSourceFiles(sourcePath, fsError);
+        std::cout << "[DEBUG] collectSourceFiles found " << sourceFiles.size() << " .trx files from " << sourcePath << std::endl;
+        if (fsError) {
+            std::cerr << "Unable to load TRX sources from " << sourcePath << ": " << fsError.message() << "\n";
+            return 1;
         }
+        allSourceFiles.insert(allSourceFiles.end(), sourceFiles.begin(), sourceFiles.end());
+    }
+
+    if (allSourceFiles.empty()) {
+        std::cerr << "No TRX files found in the specified paths\n";
         return 1;
     }
+
+    std::sort(allSourceFiles.begin(), allSourceFiles.end());
+    auto last = std::unique(allSourceFiles.begin(), allSourceFiles.end());
+    allSourceFiles.erase(last, allSourceFiles.end()); // Remove duplicates
+
+    std::cout << "[DEBUG] Total unique .trx files: " << allSourceFiles.size() << std::endl;
 
     trx::parsing::ParserDriver driver;
-    for (const auto &file : sourceFiles) {
+    for (const auto &file : allSourceFiles) {
         const std::size_t baseline = driver.diagnostics().messages().size();
         if (!driver.parseFile(file)) {
             std::cerr << "Failed to parse " << file << "\n";
@@ -826,10 +821,10 @@ int runSwaggerServer(const std::filesystem::path &sourcePath, ServeOptions optio
     const auto callableProcedures = collectCallableProcedures(module);
     const auto records = collectRecords(module);
     if (callableProcedures.empty()) {
-        if (sourceFiles.size() == 1) {
-            std::cerr << "No callable procedures (with matching input/output) were found in " << sourceFiles.front() << "\n";
+        if (allSourceFiles.size() == 1) {
+            std::cerr << "No callable procedures (with matching input/output) were found in " << allSourceFiles.front() << "\n";
         } else {
-            std::cerr << "No callable procedures (with matching input/output) were found across " << sourceFiles.size() << " TRX files under " << sourcePath << "\n";
+            std::cerr << "No callable procedures (with matching input/output) were found across " << allSourceFiles.size() << " TRX files in the specified paths\n";
         }
         return 1;
     }
@@ -859,7 +854,7 @@ int runSwaggerServer(const std::filesystem::path &sourcePath, ServeOptions optio
     const std::string swaggerIndex = buildSwaggerIndexPage();
     const std::string proceduresPayload = buildProceduresPayload(procedureNames, defaultProcedure);
 
-    std::cout << "Loaded " << procedureNames.size() << " procedure(s) from " << sourceFiles.size() << " source file(s)." << std::endl;
+    std::cout << "Loaded " << procedureNames.size() << " procedure(s) from " << allSourceFiles.size() << " source file(s)." << std::endl;
 
     std::signal(SIGINT, handleSignal);
 

@@ -341,6 +341,13 @@ void ODBCDriver::beginTransaction() {
     checkODBC(ret, connection_, SQL_HANDLE_DBC, "SQLSetConnectAttr");
 }
 
+bool ODBCDriver::isInTransaction() {
+    SQLUINTEGER autoCommit;
+    SQLRETURN ret = SQLGetConnectAttr(connection_, SQL_ATTR_AUTOCOMMIT, &autoCommit, 0, nullptr);
+    checkODBC(ret, connection_, SQL_HANDLE_DBC, "SQLGetConnectAttr");
+    return autoCommit == SQL_AUTOCOMMIT_OFF;
+}
+
 void ODBCDriver::commitTransaction() {
     SQLRETURN ret = SQLEndTran(SQL_HANDLE_DBC, connection_, SQL_COMMIT);
     checkODBC(ret, connection_, SQL_HANDLE_DBC, "SQLEndTran");

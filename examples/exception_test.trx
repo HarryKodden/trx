@@ -1,0 +1,15 @@
+FUNCTION test_throw() {
+    THROW "This is a test exception";
+}
+
+FUNCTION test_try_catch() {
+    TRY {
+        THROW "Caught exception";
+    } CATCH (ex) {
+        trace("Exception caught: " + ex.message);
+    }
+}
+
+FUNCTION test_division_by_zero() {
+    result := 10 / 0;
+}

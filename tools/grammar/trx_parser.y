@@ -408,8 +408,8 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 
 %token <text> IDENT STRING PATH SQL_TEXT SQL_VARIABLE
 %token <number> NUMBER
-%token INCLUDE CONSTANT FUNCTION TABLE PRIMARY KEY NULL_K RECORD
-%token IF THEN ELSE WHILE SWITCH CASE DEFAULT
+%token INCLUDE CONSTANT FUNCTION TABLE PRIMARY KEY NULL_K TYPE
+%token IF THEN ELSE WHILE SWITCH CASE DEFAULT CALL TRY CATCH THROW
 %token EXEC_SQL
 %token ASSIGN
 %token AND OR NOT TRUE FALSE
@@ -423,7 +423,7 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 %type <text> output_type
 %type <text> include_target
 %type <ptr> fields field_def
-%type <ptr> procedure_body block statement_list statement assignment_statement if_statement else_clause while_statement switch_statement case_clauses case_clause default_clause sql_statement expression_statement arguments sql_chunks sql_chunk
+%type <ptr> procedure_body block statement_list statement assignment_statement throw_statement try_catch_statement if_statement else_clause while_statement switch_statement case_clauses case_clause default_clause sql_statement expression_statement call_statement arguments sql_chunks sql_chunk
 %type <ptr> format_decl
 %type <ptr> variable expression variable_reference
 %type <ptr> logical_or_expression logical_and_expression equality_expression relational_expression additive_expression multiplicative_expression unary_expression primary_expression literal
@@ -452,7 +452,7 @@ definitions
 definition
     : include_decl
     | constant_decl
-    | record_decl
+    | type_decl
     | function_decl
     ;
 
@@ -497,8 +497,8 @@ constant_decl
       }
     ;
 
-record_decl
-    : RECORD identifier LBRACE fields RBRACE
+type_decl
+    : TYPE identifier LBRACE fields RBRACE
       {
           trx::ast::RecordDecl record;
           record.name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)};
@@ -789,6 +789,14 @@ statement
         {
             $$ = $1;
         }
+    | throw_statement
+        {
+            $$ = $1;
+        }
+    | try_catch_statement
+        {
+            $$ = $1;
+        }
     | if_statement
         {
                 $$ = $1;
@@ -804,6 +812,10 @@ statement
     | sql_statement
         {
                 $$ = $1;
+        }
+    | call_statement
+        {
+            $$ = $1;
         }
     | expression_statement
         {
@@ -824,6 +836,90 @@ assignment_statement
           };
           delete target;
           delete value;
+          $$ = stmt;
+      }
+    ;
+
+throw_statement
+    : THROW expression SEMICOLON
+      {
+          auto stmt = new trx::ast::Statement();
+          stmt->location = makeLocation(driver, @1);
+          auto value = expressionFrom($2);
+          stmt->node = trx::ast::ThrowStatement{
+              .value = std::move(*value)
+          };
+          delete value;
+          $$ = stmt;
+      }
+    ;
+
+try_catch_statement
+    : TRY block CATCH LPAREN variable RPAREN block
+      {
+          auto stmt = new trx::ast::Statement();
+          stmt->location = makeLocation(driver, @1);
+          auto tryBlock = statementListFrom($2);
+          auto exceptionVar = variableFrom($5);
+          auto catchBlock = statementListFrom($7);
+          stmt->node = trx::ast::TryCatchStatement{
+              .tryBlock = std::move(*tryBlock),
+              .exceptionVar = std::move(*exceptionVar),
+              .catchBlock = std::move(*catchBlock)
+          };
+          delete tryBlock;
+          delete exceptionVar;
+          delete catchBlock;
+          $$ = stmt;
+      }
+    ;
+
+call_statement
+    : CALL identifier LPAREN variable RPAREN SEMICOLON
+      {
+          auto stmt = new trx::ast::Statement();
+          stmt->location = makeLocation(driver, @1);
+          auto input = variableFrom($4);
+          stmt->node = trx::ast::CallStatement{
+              .name = $2 ? std::string($2) : std::string{},
+              .input = std::move(*input),
+              .output = std::nullopt,
+              .sync = false
+          };
+          delete input;
+          std::free($2);
+          $$ = stmt;
+      }
+    | variable ASSIGN CALL identifier LPAREN variable RPAREN SEMICOLON
+      {
+          auto stmt = new trx::ast::Statement();
+          stmt->location = makeLocation(driver, @1);
+          auto output = variableFrom($1);
+          auto input = variableFrom($6);
+          stmt->node = trx::ast::CallStatement{
+              .name = $4 ? std::string($4) : std::string{},
+              .input = std::move(*input),
+              .output = std::move(*output),
+              .sync = false
+          };
+          delete output;
+          delete input;
+          std::free($4);
+          $$ = stmt;
+      }
+    | variable ASSIGN CALL identifier LPAREN NULL_K RPAREN SEMICOLON
+      {
+          auto stmt = new trx::ast::Statement();
+          stmt->location = makeLocation(driver, @1);
+          auto output = variableFrom($1);
+          stmt->node = trx::ast::CallStatement{
+              .name = $4 ? std::string($4) : std::string{},
+              .input = std::nullopt,
+              .output = std::move(*output),
+              .sync = false
+          };
+          delete output;
+          std::free($4);
           $$ = stmt;
       }
     ;

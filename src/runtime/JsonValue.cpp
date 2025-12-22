@@ -9,7 +9,7 @@ JsonValue::JsonValue(bool value) : data(value) {}
 JsonValue::JsonValue(double value) : data(value) {}
 JsonValue::JsonValue(int value) : data(static_cast<double>(value)) {}
 JsonValue::JsonValue(std::string value) : data(std::move(value)) {}
-JsonValue::JsonValue(const char *value) : data(std::string(value)) {}
+JsonValue::JsonValue(const char *value) : data(value ? std::string(value) : std::string{}) {}
 JsonValue::JsonValue(Object value) : data(std::move(value)) {}
 JsonValue::JsonValue(Array value) : data(std::move(value)) {}
 
