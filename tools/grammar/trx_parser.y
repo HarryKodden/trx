@@ -408,25 +408,26 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 
 %token <text> IDENT STRING PATH SQL_TEXT SQL_VARIABLE
 %token <number> NUMBER
-%token INCLUDE CONSTANT FUNCTION TABLE PRIMARY KEY NULL_K TYPE
-%token IF THEN ELSE WHILE SWITCH CASE DEFAULT CALL TRY CATCH THROW
+%token INCLUDE CONSTANT FUNCTION PROCEDURE TABLE PRIMARY KEY NULL_K TYPE VAR LIST
+%token IF THEN ELSE WHILE SWITCH CASE DEFAULT CALL TRY CATCH THROW RETURN
 %token EXEC_SQL
 %token ASSIGN
 %token AND OR NOT TRUE FALSE
-%token LE GE NEQ NEQ2
+%token LE GE NEQ NEQ2 DOT
 %token _CHAR _INTEGER _SMALLINT _DECIMAL _BOOLEAN _FILE _BLOB
-%token DATE TIME
-%token LBRACE RBRACE LPAREN RPAREN COMMA SEMICOLON
+%token DATE TIME JSON
+%token LBRACE RBRACE LBRACKET RBRACKET LPAREN RPAREN COMMA SEMICOLON
 
 %type <text> identifier
 %type <text> input_type
-%type <text> output_type
+%type <text> type_name
 %type <text> include_target
+%type <text> key
 %type <ptr> fields field_def
-%type <ptr> procedure_body block statement_list statement assignment_statement throw_statement try_catch_statement if_statement else_clause while_statement switch_statement case_clauses case_clause default_clause sql_statement expression_statement call_statement arguments sql_chunks sql_chunk
+%type <ptr> procedure_body block statement_list statement assignment_statement variable_declaration_statement throw_statement return_statement try_catch_statement if_statement else_clause while_statement switch_statement case_clauses case_clause default_clause sql_statement expression_statement call_statement arguments sql_chunks sql_chunk
 %type <ptr> format_decl
 %type <ptr> variable expression variable_reference
-%type <ptr> logical_or_expression logical_and_expression equality_expression relational_expression additive_expression multiplicative_expression unary_expression primary_expression literal
+%type <ptr> logical_or_expression logical_and_expression equality_expression relational_expression additive_expression multiplicative_expression unary_expression primary_expression literal object_properties array_elements
 %type <number> dimension
 
 %left OR
@@ -435,6 +436,7 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 %nonassoc '<' '>' LE GE
 %left '+' '-'
 %left '*' '/'
+%left DOT
 %right NOT
 %right UPLUS UMINUS
 
@@ -452,8 +454,18 @@ definitions
 definition
     : include_decl
     | constant_decl
+    | variable_declaration_statement
+      {
+          auto stmt = statementFrom($1);
+          if (stmt && std::holds_alternative<trx::ast::VariableDeclarationStatement>(stmt->node)) {
+              driver.context().addVariableDeclarationStatement(std::get<trx::ast::VariableDeclarationStatement>(std::move(stmt->node)));
+          }
+          delete stmt;
+      }
+    | expression_statement
     | type_decl
     | function_decl
+    | procedure_decl
     ;
 
 include_decl
@@ -666,6 +678,22 @@ field_def
           std::free($1);
           $$ = list;
       }
+        | identifier LIST LPAREN type_name RPAREN dimension format_decl
+      {
+          auto list = newFieldList();
+          trx::ast::RecordField field;
+          field.name = {.name = $1 ? std::string($1) : std::string{}, .location = makeLocation(driver, @1)};
+          field.typeName = std::string("LIST(") + ($4 ? std::string($4) : std::string{}) + ")";
+          field.length = 0;
+                    field.dimension = toDimension($6);
+                    auto format = fieldFormatFrom($7);
+                    applyFieldFormat(field, format);
+                    delete format;
+          list->push_back(std::move(field));
+          std::free($1);
+          std::free($4);
+          $$ = list;
+      }
         | identifier identifier dimension format_decl
       {
           auto list = newFieldList();
@@ -700,15 +728,11 @@ format_decl
       {
           $$ = nullptr;
       }
-    | IDENT ':' STRING
+    | JSON ':' STRING
       {
-          std::string kind = $1 ? std::string($1) : std::string{};
+          std::string kind = "json";
           std::string raw = $3 ? std::string($3) : std::string{};
-          std::free($1);
           std::free($3);
-          std::transform(kind.begin(), kind.end(), kind.begin(), [](unsigned char ch) {
-              return static_cast<char>(std::tolower(ch));
-          });
 
           if (kind == "json") {
               auto format = newFieldFormat();
@@ -721,7 +745,7 @@ format_decl
     ;
 
 function_decl
-    : FUNCTION identifier LPAREN input_type RPAREN output_type procedure_body
+    : FUNCTION identifier LPAREN input_type RPAREN ':' type_name procedure_body
         {
             trx::ast::ProcedureDecl procedure;
             procedure.name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)};
@@ -731,12 +755,34 @@ function_decl
                 std::free($4);
             }
 
-            if ($6) {
-                procedure.output = driver.context().makeParameter(std::string($6), makeLocation(driver, @6));
-                std::free($6);
+            if ($7) {
+                procedure.output = driver.context().makeParameter(std::string($7), makeLocation(driver, @7));
+                std::free($7);
             }
 
-            auto body = statementListFrom($7);
+            auto body = statementListFrom($8);
+            if (body) {
+                procedure.body = std::move(*body);
+                delete body;
+            }
+
+            driver.context().addProcedure(std::move(procedure));
+            std::free($2);
+        }
+    ;
+
+procedure_decl
+    : PROCEDURE identifier LPAREN input_type RPAREN procedure_body
+        {
+            trx::ast::ProcedureDecl procedure;
+            procedure.name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)};
+
+            if ($4) {
+                procedure.input = driver.context().makeParameter(std::string($4), makeLocation(driver, @4));
+                std::free($4);
+            }
+
+            auto body = statementListFrom($6);
             if (body) {
                 procedure.body = std::move(*body);
                 delete body;
@@ -789,6 +835,10 @@ statement
         {
             $$ = $1;
         }
+    | variable_declaration_statement
+        {
+            $$ = $1;
+        }
     | throw_statement
         {
             $$ = $1;
@@ -817,6 +867,10 @@ statement
         {
             $$ = $1;
         }
+    | return_statement
+        {
+            $$ = $1;
+        }
     | expression_statement
         {
             $$ = $1;
@@ -840,6 +894,63 @@ assignment_statement
       }
     ;
 
+variable_declaration_statement
+    : VAR identifier SEMICOLON
+      {
+          auto stmt = new trx::ast::Statement();
+          stmt->location = makeLocation(driver, @1);
+          stmt->node = trx::ast::VariableDeclarationStatement{
+              .name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)},
+              .typeName = std::string{},
+              .initializer = std::nullopt
+          };
+          std::free($2);
+          $$ = stmt;
+      }
+    | VAR identifier type_name SEMICOLON
+      {
+          auto stmt = new trx::ast::Statement();
+          stmt->location = makeLocation(driver, @1);
+          stmt->node = trx::ast::VariableDeclarationStatement{
+              .name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)},
+              .typeName = $3 ? std::string($3) : std::string{},
+              .initializer = std::nullopt
+          };
+          std::free($2);
+          std::free($3);
+          $$ = stmt;
+      }
+    | VAR identifier ASSIGN expression SEMICOLON
+      {
+          auto stmt = new trx::ast::Statement();
+          stmt->location = makeLocation(driver, @1);
+          auto value = expressionFrom($4);
+          stmt->node = trx::ast::VariableDeclarationStatement{
+              .name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)},
+              .typeName = std::string{},
+              .initializer = std::move(*value)
+          };
+          delete value;
+          std::free($2);
+          $$ = stmt;
+      }
+    | VAR identifier identifier ASSIGN expression SEMICOLON
+      {
+          auto stmt = new trx::ast::Statement();
+          stmt->location = makeLocation(driver, @1);
+          auto value = expressionFrom($5);
+          stmt->node = trx::ast::VariableDeclarationStatement{
+              .name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)},
+              .typeName = $3 ? std::string($3) : std::string{},
+              .initializer = std::move(*value)
+          };
+          delete value;
+          std::free($2);
+          std::free($3);
+          $$ = stmt;
+      }
+    ;
+
 throw_statement
     : THROW expression SEMICOLON
       {
@@ -847,6 +958,20 @@ throw_statement
           stmt->location = makeLocation(driver, @1);
           auto value = expressionFrom($2);
           stmt->node = trx::ast::ThrowStatement{
+              .value = std::move(*value)
+          };
+          delete value;
+          $$ = stmt;
+      }
+    ;
+
+return_statement
+    : RETURN expression SEMICOLON
+      {
+          auto stmt = new trx::ast::Statement();
+          stmt->location = makeLocation(driver, @1);
+          auto value = expressionFrom($2);
+          stmt->node = trx::ast::ReturnStatement{
               .value = std::move(*value)
           };
           delete value;
@@ -1278,6 +1403,16 @@ primary_expression
                     std::free($1);
                     $$ = expr;
             }
+        | variable DOT identifier LPAREN arguments RPAREN
+            {
+                    auto args = expressionListFrom($5);
+                    auto object = expressionFrom(wrapExpression(trx::ast::makeVariable(std::move(*variableFrom($1)))));
+                    auto expr = wrapExpression(trx::ast::makeMethodCall(std::move(*object), $3 ? std::string($3) : std::string{}, std::move(*args)));
+                    delete args;
+                    delete object;
+                    std::free($3);
+                    $$ = expr;
+            }
         | LPAREN expression RPAREN
             {
                     $$ = expressionFrom($2);
@@ -1302,6 +1437,83 @@ literal
         | FALSE
             {
                     $$ = wrapExpression(trx::ast::makeBooleanLiteral(false));
+            }
+        | LBRACE object_properties RBRACE
+            {
+                    $$ = $2;
+            }
+        | LBRACKET array_elements RBRACKET
+            {
+                    $$ = $2;
+            }
+        ;
+
+object_properties
+        : /* empty */
+            {
+                    $$ = wrapExpression(trx::ast::makeObjectLiteral({}));
+            }
+        | key ':' expression
+            {
+                    auto expr = expressionFrom($3);
+                    std::unordered_map<std::string, trx::ast::ExpressionPtr> props;
+                    props.emplace($1, std::move(*expr));
+                    delete expr;
+                    $$ = wrapExpression(trx::ast::makeObjectLiteral(std::move(props)));
+                    std::free($1);
+            }
+        | object_properties COMMA key ':' expression
+            {
+                    // This is complex to modify existing object, so for now we'll create new ones
+                    // In a real implementation, we'd need to modify the existing object
+                    auto prevExpr = expressionFrom($1);
+                    auto &prevObj = std::get<trx::ast::ObjectLiteralExpression>(prevExpr->get()->node);
+                    auto valueExpr = expressionFrom($5);
+                    prevObj.properties.emplace($3, std::move(*valueExpr));
+                    delete valueExpr;
+                    $$ = $1;
+                    std::free($3);
+            }
+        ;
+
+key
+        : identifier
+            {
+                    $$ = $1;
+            }
+        | STRING
+            {
+                    // Remove quotes from the string
+                    std::string str = $1 ? std::string($1) : std::string{};
+                    if (!str.empty() && str.front() == '"' && str.back() == '"') {
+                        str = str.substr(1, str.size() - 2);
+                    }
+                    $$ = strdup(str.c_str());
+                    std::free($1);
+            }
+        ;
+
+array_elements
+        : /* empty */
+            {
+                    $$ = wrapExpression(trx::ast::makeArrayLiteral({}));
+            }
+        | expression
+            {
+                    auto expr = expressionFrom($1);
+                    std::vector<trx::ast::ExpressionPtr> elements;
+                    elements.push_back(std::move(*expr));
+                    delete expr;
+                    $$ = wrapExpression(trx::ast::makeArrayLiteral(std::move(elements)));
+            }
+        | array_elements COMMA expression
+            {
+                    auto prevExpr = expressionFrom($1);
+                    auto &prevArr = std::get<trx::ast::ArrayLiteralExpression>(prevExpr->get()->node);
+                    auto valueExpr = expressionFrom($3);
+                    prevArr.elements.push_back(std::move(*valueExpr));
+                    delete valueExpr;
+                    $$ = $1;
             }
         ;
 
@@ -1336,6 +1548,17 @@ variable
                     var->path.push_back(std::move(segment));
                     $$ = var;
             }
+        | variable LBRACKET expression RBRACKET
+            {
+                    auto var = variableFrom($1);
+                    // Modify the last segment to add subscript
+                    if (!var->path.empty()) {
+                        auto expr = expressionFrom($3);
+                        var->path.back().subscript = std::move(*expr);
+                        delete expr;
+                    }
+                    $$ = var;
+            }
         ;
 
 input_type
@@ -1343,19 +1566,62 @@ input_type
       {
           $$ = nullptr;
       }
-    | identifier
+    | type_name
       {
           $$ = $1;
       }
 
-output_type
-    : /* empty */
+type_name
+    : identifier
       {
-          $$ = nullptr;
+          $$ = $1;
       }
-    | ':' identifier
+    | LIST LPAREN type_name RPAREN
       {
-          $$ = $2;
+          std::string listType = "LIST(";
+          listType += $3;
+          listType += ")";
+          $$ = strdup(listType.c_str());
+      }
+    | _CHAR
+      {
+          $$ = strdup("_CHAR");
+      }
+    | _INTEGER
+      {
+          $$ = strdup("_INTEGER");
+      }
+    | _SMALLINT
+      {
+          $$ = strdup("_SMALLINT");
+      }
+    | _DECIMAL
+      {
+          $$ = strdup("_DECIMAL");
+      }
+    | _BOOLEAN
+      {
+          $$ = strdup("_BOOLEAN");
+      }
+    | _FILE
+      {
+          $$ = strdup("_FILE");
+      }
+    | _BLOB
+      {
+          $$ = strdup("_BLOB");
+      }
+    | DATE
+      {
+          $$ = strdup("DATE");
+      }
+    | TIME
+      {
+          $$ = strdup("TIME");
+      }
+    | JSON
+      {
+          $$ = strdup("JSON");
       }
 
 identifier

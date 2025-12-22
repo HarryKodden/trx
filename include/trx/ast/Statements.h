@@ -44,6 +44,12 @@ struct AssignmentStatement {
     ExpressionPtr value;
 };
 
+struct VariableDeclarationStatement {
+    Identifier name;
+    std::string typeName;
+    std::optional<ExpressionPtr> initializer;
+};
+
 struct BatchStatement {
     std::string name;
     std::optional<VariableExpression> argument;
@@ -131,6 +137,7 @@ struct Statement {
                               ReturnStatement,
                               SystemStatement,
                               AssignmentStatement,
+                              VariableDeclarationStatement,
                               BatchStatement,
                               ThrowStatement,
                               TryCatchStatement,

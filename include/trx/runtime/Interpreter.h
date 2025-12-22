@@ -14,16 +14,21 @@ public:
     explicit Interpreter(const ast::Module &module, std::unique_ptr<DatabaseDriver> dbDriver = nullptr);
     ~Interpreter();
 
-    JsonValue execute(const std::string &procedureName, const JsonValue &input) const;
+    std::optional<JsonValue> execute(const std::string &procedureName, const JsonValue &input);
 
     const ast::ProcedureDecl* getProcedure(const std::string &name) const;
 
     // Accessors for SQL operations
     DatabaseDriver& db() const { return *dbDriver_; }
 
+    // Access to global variables
+    std::unordered_map<std::string, JsonValue>& globalVariables() { return globalVariables_; }
+    const std::unordered_map<std::string, JsonValue>& globalVariables() const { return globalVariables_; }
+
 private:
     const ast::Module &module_;
     std::unordered_map<std::string, const ast::ProcedureDecl*> procedures_;
+    std::unordered_map<std::string, JsonValue> globalVariables_;
     std::unique_ptr<DatabaseDriver> dbDriver_;
 };
 

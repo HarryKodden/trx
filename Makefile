@@ -30,8 +30,8 @@ lint: docker-dev
 test: docker-dev
 	$(DOCKER_DEV_SHELL) -lc 'cd /workspace/build && ctest --output-on-failure'
 
-run: docker-runtime
-	docker run --rm -v "$(PWD)":/workspace $(DOCKER_RUNTIME) /workspace/$(SOURCE)
+run: build
+	$(DOCKER_DEV_SHELL) -lc './build/src/trx_compiler examples/sample.trx'
 
 serve: docker-runtime
 	docker rm -f trx-server || true

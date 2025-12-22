@@ -1,4 +1,5 @@
-INCLUDE user.inc;
+INCLUDE init.trx;
+include json_test.trx;
 
 CONSTANT PI 3.14159;
 CONSTANT APP_NAME "TRX Interpreter";
@@ -20,12 +21,18 @@ TYPE EMPLOYEE {
     DEPARTMENT CHAR(32);
 }
 
-FUNCTION inner() {
+TYPE EMPLOYEES {
+    employees list(EMPLOYEE);
+}
+
+PROCEDURE inner() {
     trace('Hello world');
 }
 
 FUNCTION process_employee(PERSON) : PERSON {
     output := input;
+
+    var employees EMPLOYEES;
 
     IF input.ACTIVE THEN {
         output.SALARY := input.SALARY * 1.1;
@@ -34,6 +41,14 @@ FUNCTION process_employee(PERSON) : PERSON {
     }
 
     inner();
+
+    exec sql declare c1 cursor for select name from employee;
+    exec sql open c1;
+        var employee EMPLOYEE;
+        exec sql fetch c1 into :employee;
+    exec sql close c1;
+    
+    trace("Emnloyees: "+employees);
 
     WHILE output.SALARY < 50000 {
         output.SALARY := output.SALARY + 1000;
@@ -46,4 +61,24 @@ FUNCTION process_employee(PERSON) : PERSON {
 
 FUNCTION calculate_bonus(PERSON) : PERSON {
     output.SALARY := input.SALARY * 1.1;
+}
+
+PROCEDURE test_lists() {
+    var numbers list(INTEGER);
+    var employees list(EMPLOYEE);
+
+    append(numbers, 10);
+    append(numbers, 20);
+    append(numbers, 30);
+
+    trace("Length of numbers: " + len(numbers));
+
+    var emp EMPLOYEE;
+    emp.DEPARTMENT := "Engineering";
+    append(employees, emp);
+
+    emp.DEPARTMENT := "Sales";
+    append(employees, emp);
+
+    trace("Length of employees: " + len(employees));
 }

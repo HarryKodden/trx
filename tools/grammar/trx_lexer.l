@@ -77,6 +77,8 @@ SQLTEXT      [^\s:;]+
 
 %%
 
+"//".*          { /* skip single line comment */ }
+"/*"([^*]|\*+[^*/])*\*+"/"  { /* skip multi line comment */ }
 {WHITESPACE}    { /* skip */ }
 {NEWLINE}       { ++YYLLOC.first_line; YYLLOC.last_line = YYLLOC.first_line; YYLLOC.first_column = 1; YYLLOC.last_column = 1; }
 
@@ -85,6 +87,8 @@ SQLTEXT      [^\s:;]+
                     return EXEC_SQL;
                 }
 
+PROCEDURE       { return PROCEDURE; }
+[Ll][Ii][Ss][Tt] { return LIST; }
 [Ii][Nn][Cc][Ll][Uu][Dd][Ee]  { return INCLUDE; }
 [Cc][Oo][Nn][Ss][Tt][Aa][Nn][Tt] { return CONSTANT; }
 [Ff][Uu][Nn][Cc][Tt][Ii][Oo][Nn] { return FUNCTION; }
@@ -99,8 +103,10 @@ SQLTEXT      [^\s:;]+
 [Dd][Ee][Ff][Aa][Uu][Ll][Tt] { return DEFAULT; }
 [Cc][Aa][Ll][Ll] { return CALL; }
 [Tt][Rr][Yy] { return TRY; }
+[Vv][Aa][Rr] { return VAR; }
 [Cc][Aa][Tt][Cc][Hh] { return CATCH; }
 [Tt][Hh][Rr][Oo][Ww] { return THROW; }
+[Rr][Ee][Tt][Uu][Rr][Nn] { return RETURN; }
 [Tt][Rr][Uu][Ee] { return TRUE; }
 [Ff][Aa][Ll][Ss][Ee] { return FALSE; }
 [Aa][Nn][Dd] { return AND; }
@@ -115,9 +121,12 @@ SQLTEXT      [^\s:;]+
 [Bb][Ll][Oo][Bb] { return _BLOB; }
 [Dd][Aa][Tt][Ee] { return DATE; }
 [Tt][Ii][Mm][Ee] { return TIME; }
+[Jj][Ss][Oo][Nn] { return JSON; }
 
 "{"             { return LBRACE; }
 "}"             { return RBRACE; }
+"["             { return LBRACKET; }
+"]"             { return RBRACKET; }
 "("             { return LPAREN; }
 ")"             { return RPAREN; }
 ","             { return COMMA; }
@@ -127,6 +136,7 @@ SQLTEXT      [^\s:;]+
 ">="            { return GE; }
 "<>"            { return NEQ; }
 "><"            { return NEQ2; }
+"."             { return DOT; }
 
 <SQLMODE>[ \t\r]+ {
                     YYLVAL.text = duplicate_text(yytext, yyleng);

@@ -18,6 +18,7 @@
 #include <iostream>
 #include <map>
 #include <netinet/in.h>
+#include <set>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -737,16 +738,32 @@ HttpResponse handleExecuteProcedure(const HttpRequest &request,
             return makeErrorResponse(400, "Request payload must be a JSON object");
         }
 
-        const trx::runtime::JsonValue output = interpreter.execute(procedure->name.name, input);
+        const auto outputOpt = interpreter.execute(procedure->name.name, input);
+        if (procedure->output) {
+            if (!outputOpt) {
+                return makeErrorResponse(500, "Function does not return a value");
+            }
+            const trx::runtime::JsonValue output = *outputOpt;
 
-        HttpResponse response;
-        response.status = 200;
-        response.contentType = "application/json";
-        response.body = serializeJsonValue(output);
-        response.extraHeaders.emplace_back("Access-Control-Allow-Origin", "*");
-        response.extraHeaders.emplace_back("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        response.extraHeaders.emplace_back("Access-Control-Allow-Headers", "Content-Type");
-        return response;
+            HttpResponse response;
+            response.status = 200;
+            response.contentType = "application/json";
+            response.body = serializeJsonValue(output);
+            response.extraHeaders.emplace_back("Access-Control-Allow-Origin", "*");
+            response.extraHeaders.emplace_back("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+            response.extraHeaders.emplace_back("Access-Control-Allow-Headers", "Content-Type");
+            return response;
+        } else {
+            // Procedure does not return output
+            HttpResponse response;
+            response.status = 200;
+            response.contentType = "application/json";
+            response.body = "{}";
+            response.extraHeaders.emplace_back("Access-Control-Allow-Origin", "*");
+            response.extraHeaders.emplace_back("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+            response.extraHeaders.emplace_back("Access-Control-Allow-Headers", "Content-Type");
+            return response;
+        }
     } catch (const JsonParseError &error) {
         return makeErrorResponse(400, error.what());
     } catch (const std::exception &error) {
@@ -793,27 +810,73 @@ int runSwaggerServer(const std::vector<std::filesystem::path> &sourcePaths, Serv
     std::cout << "[DEBUG] Total unique .trx files: " << allSourceFiles.size() << std::endl;
 
     trx::parsing::ParserDriver driver;
-    for (const auto &file : allSourceFiles) {
-        const std::size_t baseline = driver.diagnostics().messages().size();
-        if (!driver.parseFile(file)) {
-            std::cerr << "Failed to parse " << file << "\n";
-            const auto &diagnostics = driver.diagnostics().messages();
-            for (std::size_t index = baseline; index < diagnostics.size(); ++index) {
-                const auto &diag = diagnostics[index];
-                std::cerr << "  - ";
-                if (!diag.location.file.empty()) {
-                    std::cerr << diag.location.file;
-                    if (diag.location.line != 0) {
-                        std::cerr << ':' << diag.location.line;
-                        if (diag.location.column != 0) {
-                            std::cerr << ':' << diag.location.column;
-                        }
-                    }
-                    std::cerr << ' ';
-                }
-                std::cerr << diag.message << "\n";
+    
+    // Parse files, handling includes recursively
+    std::set<std::filesystem::path> parsedFiles;
+    std::vector<std::filesystem::path> toParse = allSourceFiles;
+    
+    while (!toParse.empty()) {
+        std::vector<std::filesystem::path> currentBatch = std::move(toParse);
+        toParse.clear();
+        
+        for (const auto &file : currentBatch) {
+            if (parsedFiles.find(file) != parsedFiles.end()) {
+                continue; // Already parsed
             }
-            return 1;
+            
+            const std::size_t baseline = driver.diagnostics().messages().size();
+            if (!driver.parseFile(file)) {
+                std::cerr << "Failed to parse " << file << "\n";
+                const auto &diagnostics = driver.diagnostics().messages();
+                for (std::size_t index = baseline; index < diagnostics.size(); ++index) {
+                    const auto &diag = diagnostics[index];
+                    std::cerr << "  - ";
+                    if (!diag.location.file.empty()) {
+                        std::cerr << diag.location.file;
+                        if (diag.location.line != 0) {
+                            std::cerr << ':' << diag.location.line;
+                            if (diag.location.column != 0) {
+                                std::cerr << ':' << diag.location.column;
+                            }
+                        }
+                        std::cerr << ' ';
+                    }
+                    std::cerr << diag.message << "\n";
+                }
+                return 1;
+            }
+            
+            parsedFiles.insert(file);
+        }
+        
+        // Check for includes in the current module and add them to toParse
+        const auto &module = driver.context().module();
+        for (const auto &decl : module.declarations) {
+            if (std::holds_alternative<trx::ast::IncludeDecl>(decl)) {
+                const auto &includeDecl = std::get<trx::ast::IncludeDecl>(decl);
+                std::filesystem::path includePath = std::filesystem::path(includeDecl.file.name);
+                
+                // If the include path is relative, resolve it relative to the directory of the file that contained the include
+                if (includePath.is_relative()) {
+                    // The include location gives us the file that contained the include
+                    std::filesystem::path baseDir = std::filesystem::path(includeDecl.file.location.file).parent_path();
+                    if (baseDir.empty()) {
+                        // If no directory in the file path, resolve relative to current working directory
+                        baseDir = ".";
+                    }
+                    includePath = baseDir / includePath;
+                }
+                
+                if (parsedFiles.find(includePath) == parsedFiles.end()) {
+                    std::error_code fsError;
+                    if (std::filesystem::exists(includePath, fsError) && std::filesystem::is_regular_file(includePath, fsError)) {
+                        toParse.push_back(includePath);
+                        std::cout << "[DEBUG] Found include: " << includePath << std::endl;
+                    } else {
+                        std::cerr << "Warning: Included file not found: " << includePath << std::endl;
+                    }
+                }
+            }
         }
     }
 

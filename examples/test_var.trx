@@ -1,0 +1,1 @@
+PROCEDURE main() { VAR x := 42; trace(x); }

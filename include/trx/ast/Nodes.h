@@ -12,11 +12,6 @@
 
 namespace trx::ast {
 
-struct Identifier {
-    std::string name;
-    SourceLocation location{};
-};
-
 struct IncludeDecl {
     Identifier file;
 };
@@ -79,7 +74,9 @@ using Declaration = std::variant<IncludeDecl,
                                  RecordDecl,
                                  TableDecl,
                                  ProcedureDecl,
-                                 ExternalProcedureDecl>;
+                                 ExternalProcedureDecl,
+                                 VariableDeclarationStatement,
+                                 ExpressionStatement>;
 
 struct Module {
     std::vector<Declaration> declarations;

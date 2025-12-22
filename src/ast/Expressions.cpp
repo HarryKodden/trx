@@ -38,12 +38,20 @@ ExpressionPtr makeFunctionCall(std::string name, std::vector<ExpressionPtr> argu
     return make(FunctionCallExpression{.functionName = std::move(name), .arguments = std::move(arguments)});
 }
 
+ExpressionPtr makeMethodCall(ExpressionPtr object, std::string methodName, std::vector<ExpressionPtr> arguments) {
+    return make(MethodCallExpression{.object = std::move(object), .methodName = std::move(methodName), .arguments = std::move(arguments)});
+}
+
 ExpressionPtr makeBuiltin(BuiltinValue builtin, std::vector<ExpressionPtr> arguments) {
     return make(BuiltinExpression{.value = builtin, .arguments = std::move(arguments)});
 }
 
-ExpressionPtr makeSqlFragment(std::vector<SqlFragmentElement> fragments) {
-    return make(SqlFragmentExpression{.fragments = std::move(fragments)});
+ExpressionPtr makeObjectLiteral(std::unordered_map<std::string, ExpressionPtr> properties) {
+    return make(ObjectLiteralExpression{.properties = std::move(properties)});
+}
+
+ExpressionPtr makeArrayLiteral(std::vector<ExpressionPtr> elements) {
+    return make(ArrayLiteralExpression{.elements = std::move(elements)});
 }
 
 } // namespace trx::ast

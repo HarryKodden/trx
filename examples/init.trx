@@ -1,0 +1,29 @@
+PROCEDURE init_database() {
+    EXEC SQL CREATE TABLE IF NOT EXISTS address (
+        street VARCHAR(64),
+        zip INTEGER
+    );
+
+    EXEC SQL CREATE TABLE IF NOT EXISTS person (
+        id INTEGER PRIMARY KEY,
+        name VARCHAR(64),
+        age INTEGER,
+        active BOOLEAN,
+        salary DECIMAL(10,2)
+    );
+
+    EXEC SQL CREATE TABLE IF NOT EXISTS employee (
+        person_id INTEGER PRIMARY KEY REFERENCES person(id),
+        department VARCHAR(32)
+    );
+
+    trace("Database tables initialized successfully");
+}
+
+PROCEDURE drop_tables() {
+    EXEC SQL DROP TABLE IF EXISTS employee;
+    EXEC SQL DROP TABLE IF EXISTS person;
+    EXEC SQL DROP TABLE IF EXISTS address;
+
+    trace("Database tables dropped successfully");
+}

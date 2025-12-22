@@ -40,9 +40,16 @@ PostgreSQLDriver::~PostgreSQLDriver() {
 }
 
 void PostgreSQLDriver::initialize() {
-    std::string conninfo = "host=" + config_.host + " port=" + config_.port +
-                           " dbname=" + config_.databaseName + " user=" + config_.username +
-                           " password=" + config_.password;
+    std::string conninfo;
+    if (!config_.connectionString.empty()) {
+        // Use connection string directly
+        conninfo = config_.connectionString;
+    } else {
+        // Build from individual fields
+        conninfo = "host=" + config_.host + " port=" + config_.port +
+                   " dbname=" + config_.databaseName + " user=" + config_.username +
+                   " password=" + config_.password;
+    }
     conn_ = PQconnectdb(conninfo.c_str());
     if (PQstatus(conn_) != CONNECTION_OK) {
         std::stringstream ss;

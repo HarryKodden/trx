@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <string>
+#include <sstream>
 
 namespace trx::runtime {
 
@@ -24,10 +25,12 @@ namespace trx::runtime {
 namespace {
 
 struct ExecutionContext {
-    const Interpreter &interpreter;
+    Interpreter &interpreter;
     std::unordered_map<std::string, JsonValue> variables;
     bool returned{false};
     std::optional<JsonValue> returnValue;
+    bool isGlobal{false};
+    bool isFunction{false};
 };
 
 JsonValue evaluateExpression(const trx::ast::ExpressionPtr &expression, ExecutionContext &context);
@@ -96,6 +99,16 @@ JsonValue evaluateBinary(const trx::ast::BinaryExpression &binary, ExecutionCont
             }
             if (std::holds_alternative<std::string>(lhs.data) && std::holds_alternative<std::string>(rhs.data)) {
                 return JsonValue(std::get<std::string>(lhs.data) + std::get<std::string>(rhs.data));
+            }
+            if (std::holds_alternative<std::string>(lhs.data)) {
+                std::ostringstream oss;
+                oss << rhs;
+                return JsonValue(std::get<std::string>(lhs.data) + oss.str());
+            }
+            if (std::holds_alternative<std::string>(rhs.data)) {
+                std::ostringstream oss;
+                oss << lhs;
+                return JsonValue(oss.str() + std::get<std::string>(rhs.data));
             }
             throw TrxTypeException("Add operator requires compatible operands");
         case trx::ast::BinaryOperator::Subtract:
@@ -172,8 +185,8 @@ JsonValue evaluateBinary(const trx::ast::BinaryExpression &binary, ExecutionCont
 
 JsonValue evaluateFunctionCall(const trx::ast::FunctionCallExpression &call, ExecutionContext &context) {
     // For now, implement some built-in functions
-    if (call.functionName == "length") {
-        if (call.arguments.size() != 1) throw std::runtime_error("length function takes 1 argument");
+    if (call.functionName == "length" || call.functionName == "len") {
+        if (call.arguments.size() != 1) throw std::runtime_error("length/len function takes 1 argument");
         JsonValue arg = evaluateExpression(call.arguments[0], context);
         if (std::holds_alternative<std::string>(arg.data)) {
             return JsonValue(static_cast<double>(std::get<std::string>(arg.data).size()));
@@ -181,7 +194,19 @@ JsonValue evaluateFunctionCall(const trx::ast::FunctionCallExpression &call, Exe
         if (arg.isArray()) {
             return JsonValue(static_cast<double>(arg.asArray().size()));
         }
-        throw std::runtime_error("length function requires string or array");
+        throw std::runtime_error("length/len function requires string or array");
+    }
+    if (call.functionName == "append") {
+        if (call.arguments.size() != 2) throw std::runtime_error("append function takes 2 arguments");
+        if (const auto *var = std::get_if<trx::ast::VariableExpression>(&call.arguments[0]->node)) {
+            JsonValue &list = resolveVariableTarget(*var, context);
+            JsonValue item = evaluateExpression(call.arguments[1], context);
+            if (!list.isArray()) throw std::runtime_error("first argument to append must be an array");
+            list.asArray().push_back(item);
+            return JsonValue(nullptr);
+        } else {
+            throw std::runtime_error("append first argument must be a variable");
+        }
     }
     if (call.functionName == "substr") {
         if (call.arguments.size() != 3) throw std::runtime_error("substr function takes 3 arguments");
@@ -224,17 +249,43 @@ JsonValue evaluateFunctionCall(const trx::ast::FunctionCallExpression &call, Exe
     // For user-defined procedures
     const auto *proc = context.interpreter.getProcedure(call.functionName);
     if (proc) {
+        if (!proc->output) {
+            throw std::runtime_error("Procedure calls cannot be used in expressions");
+        }
         bool hasInput = proc->input.has_value();
         if (hasInput) {
-            if (call.arguments.size() != 1) throw std::runtime_error("Procedure call expects 1 argument");
+            if (call.arguments.size() != 1) throw std::runtime_error("Function call expects 1 argument");
             JsonValue arg = evaluateExpression(call.arguments[0], context);
-            return context.interpreter.execute(call.functionName, arg);
+            auto result = context.interpreter.execute(call.functionName, arg);
+            return result.value_or(JsonValue(nullptr));
         } else {
-            if (call.arguments.size() != 0) throw std::runtime_error("Procedure call expects no arguments");
-            return context.interpreter.execute(call.functionName, JsonValue(nullptr));
+            if (call.arguments.size() != 0) throw std::runtime_error("Function call expects no arguments");
+            auto result = context.interpreter.execute(call.functionName, JsonValue(nullptr));
+            return result.value_or(JsonValue(nullptr));
         }
     }
     throw std::runtime_error("Function not supported: " + call.functionName);
+}
+
+JsonValue evaluateMethodCall(const trx::ast::MethodCallExpression &call, ExecutionContext &context) {
+    JsonValue object = evaluateExpression(call.object, context);
+    std::vector<JsonValue> args;
+    for (const auto &arg : call.arguments) {
+        args.push_back(evaluateExpression(arg, context));
+    }
+    
+    if (object.isArray()) {
+        if (call.methodName == "append") {
+            if (args.size() != 1) throw std::runtime_error("append method takes 1 argument");
+            object.asArray().push_back(args[0]);
+            return JsonValue(nullptr); // Methods that modify return null
+        }
+        if (call.methodName == "length") {
+            return JsonValue(static_cast<double>(object.asArray().size()));
+        }
+    }
+    std::string typeName = object.isArray() ? "array" : object.isObject() ? "object" : "value";
+    throw std::runtime_error("Method not supported: " + call.methodName + " on " + typeName);
 }
 
 JsonValue evaluateBuiltin(const trx::ast::BuiltinExpression &builtin, ExecutionContext &context) {
@@ -316,16 +367,35 @@ struct ExpressionEvaluator {
     ExecutionContext &context;
 
     JsonValue operator()(const trx::ast::LiteralExpression &literal) const;
+    JsonValue operator()(const trx::ast::ObjectLiteralExpression &object) const;
+    JsonValue operator()(const trx::ast::ArrayLiteralExpression &array) const;
     JsonValue operator()(const trx::ast::VariableExpression &variable) const;
     JsonValue operator()(const trx::ast::UnaryExpression &unary) const;
     JsonValue operator()(const trx::ast::BinaryExpression &binary) const;
     JsonValue operator()(const trx::ast::FunctionCallExpression &call) const;
+    JsonValue operator()(const trx::ast::MethodCallExpression &call) const;
     JsonValue operator()(const trx::ast::BuiltinExpression &builtin) const;
     JsonValue operator()(const trx::ast::SqlFragmentExpression &sql) const;
 };
 
 JsonValue ExpressionEvaluator::operator()(const trx::ast::LiteralExpression &literal) const {
     return evaluateLiteral(literal);
+}
+
+JsonValue ExpressionEvaluator::operator()(const trx::ast::ObjectLiteralExpression &object) const {
+    JsonValue::Object obj;
+    for (const auto &[key, value] : object.properties) {
+        obj[key] = evaluateExpression(value, context);
+    }
+    return JsonValue(obj);
+}
+
+JsonValue ExpressionEvaluator::operator()(const trx::ast::ArrayLiteralExpression &array) const {
+    JsonValue::Array arr;
+    for (const auto &element : array.elements) {
+        arr.push_back(evaluateExpression(element, context));
+    }
+    return JsonValue(arr);
 }
 
 JsonValue ExpressionEvaluator::operator()(const trx::ast::VariableExpression &variable) const {
@@ -342,6 +412,10 @@ JsonValue ExpressionEvaluator::operator()(const trx::ast::BinaryExpression &bina
 
 JsonValue ExpressionEvaluator::operator()(const trx::ast::FunctionCallExpression &call) const {
     return evaluateFunctionCall(call, context);
+}
+
+JsonValue ExpressionEvaluator::operator()(const trx::ast::MethodCallExpression &call) const {
+    return evaluateMethodCall(call, context);
 }
 
 JsonValue ExpressionEvaluator::operator()(const trx::ast::BuiltinExpression &builtin) const {
@@ -366,11 +440,16 @@ JsonValue resolveVariableValue(const trx::ast::VariableExpression &variable, Exe
     }
 
     const JsonValue *current = nullptr;
-    const auto rootIt = context.variables.find(variable.path.front().identifier);
+    auto rootIt = context.variables.find(variable.path.front().identifier);
     if (rootIt == context.variables.end()) {
-        throw std::runtime_error("Unknown variable: " + variable.path.front().identifier);
+        // Check global variables
+    auto globalIt = context.interpreter.globalVariables().find(variable.path.front().identifier);
+    if (globalIt != context.interpreter.globalVariables().end()) {
+        current = &globalIt->second;
     }
-    current = &rootIt->second;
+    } else {
+        current = &rootIt->second;
+    }
 
     for (std::size_t i = 0; i < variable.path.size(); ++i) {
         const auto &segment = variable.path[i];
@@ -412,8 +491,20 @@ JsonValue &resolveVariableTarget(const trx::ast::VariableExpression &variable, E
     }
 
     JsonValue *current = nullptr;
-    JsonValue &root = context.variables[variable.path.front().identifier];
-    current = &root;
+    JsonValue *root = nullptr;
+    auto localIt = context.variables.find(variable.path.front().identifier);
+    if (localIt != context.variables.end()) {
+        root = &localIt->second;
+    } else {
+        auto globalIt = context.interpreter.globalVariables().find(variable.path.front().identifier);
+        if (globalIt != context.interpreter.globalVariables().end()) {
+            root = &globalIt->second;
+        } else {
+            // Create in local variables
+            root = &context.variables[variable.path.front().identifier];
+        }
+    }
+    current = root;
 
     for (std::size_t i = 0; i < variable.path.size(); ++i) {
         const auto &segment = variable.path[i];
@@ -449,6 +540,21 @@ void executeAssignment(const trx::ast::AssignmentStatement &assignment, Executio
     JsonValue value = evaluateExpression(assignment.value, context);
     JsonValue &target = resolveVariableTarget(assignment.target, context);
     target = std::move(value);
+}
+
+void executeVariableDeclaration(const trx::ast::VariableDeclarationStatement &varDecl, ExecutionContext &context) {
+    JsonValue initialValue = JsonValue(nullptr);
+    if (varDecl.initializer) {
+        initialValue = evaluateExpression(*varDecl.initializer, context);
+    } else if (!varDecl.typeName.empty() && varDecl.typeName.substr(0, 5) == "LIST(") {
+        // Initialize list variables as empty arrays
+        initialValue = JsonValue(JsonValue::Array{});
+    }
+    if (context.isGlobal) {
+        context.interpreter.globalVariables()[varDecl.name.name] = initialValue;
+    } else {
+        context.variables[varDecl.name.name] = initialValue;
+    }
 }
 
 void executeIf(const trx::ast::IfStatement &ifStmt, ExecutionContext &context) {
@@ -598,9 +704,14 @@ void executeBatch(const trx::ast::BatchStatement &batchStmt, ExecutionContext &c
 
 void executeCall(const trx::ast::CallStatement &callStmt, ExecutionContext &context) {
     JsonValue inputVal = callStmt.input ? resolveVariableValue(*callStmt.input, context) : JsonValue();
-    JsonValue result = context.interpreter.execute(callStmt.name, inputVal);
+    auto result = context.interpreter.execute(callStmt.name, inputVal);
     if (callStmt.output) {
-        resolveVariableTarget(*callStmt.output, context) = result;
+        if (!result) {
+            throw std::runtime_error("Cannot assign output from procedure call");
+        }
+        resolveVariableTarget(*callStmt.output, context) = *result;
+    } else if (result) {
+        throw std::runtime_error("Function call result ignored");
     }
 }
 
@@ -610,6 +721,9 @@ struct ReturnException : std::exception {
 };
 
 void executeReturn(const trx::ast::ReturnStatement &returnStmt, ExecutionContext &context) {
+    if (!context.isFunction) {
+        throw std::runtime_error("Return statement not allowed in procedures");
+    }
     JsonValue val = evaluateExpression(returnStmt.value, context);
     throw ReturnException(val);
 }
@@ -766,6 +880,7 @@ void executeStatement(const trx::ast::Statement &statement, ExecutionContext &co
     std::visit(
         Overloaded{
             [&](const trx::ast::AssignmentStatement &assignment) { executeAssignment(assignment, context); },
+            [&](const trx::ast::VariableDeclarationStatement &varDecl) { executeVariableDeclaration(varDecl, context); },
             [&](const trx::ast::ThrowStatement &throwStmt) { executeThrow(throwStmt, context); },
             [&](const trx::ast::TryCatchStatement &tryCatchStmt) { executeTryCatch(tryCatchStmt, context); },
             [&](const trx::ast::IfStatement &ifStmt) { executeIf(ifStmt, context); },
@@ -846,6 +961,28 @@ Interpreter::Interpreter(const trx::ast::Module &module, std::unique_ptr<Databas
     }
 
     dbDriver_->initialize();
+
+    // Execute global statements (variable declarations and function calls)
+    ExecutionContext globalContext{*this, {}, false, std::nullopt, true};
+    for (const auto &decl : module.declarations) {
+        if (std::holds_alternative<ast::VariableDeclarationStatement>(decl)) {
+            executeVariableDeclaration(std::get<ast::VariableDeclarationStatement>(decl), globalContext);
+        } else if (std::holds_alternative<ast::ExpressionStatement>(decl)) {
+            executeExpression(std::get<ast::ExpressionStatement>(decl), globalContext);
+        } else if (std::holds_alternative<ast::ProcedureDecl>(decl)) {
+            procedures_[std::get<ast::ProcedureDecl>(decl).name.name] = &std::get<ast::ProcedureDecl>(decl);
+        } else if (std::holds_alternative<ast::TableDecl>(decl)) {
+            // Handle table declarations if needed
+        } else if (std::holds_alternative<ast::RecordDecl>(decl)) {
+            // Handle record declarations if needed
+        } else if (std::holds_alternative<ast::ConstantDecl>(decl)) {
+            // Handle constant declarations if needed
+        } else if (std::holds_alternative<ast::IncludeDecl>(decl)) {
+            // Handle include declarations if needed
+        } else if (std::holds_alternative<ast::ExternalProcedureDecl>(decl)) {
+            // Handle external procedure declarations if needed
+        }
+    }
 }
 
 Interpreter::~Interpreter() = default;
@@ -855,7 +992,7 @@ const trx::ast::ProcedureDecl* Interpreter::getProcedure(const std::string &name
     return it != procedures_.end() ? it->second : nullptr;
 }
 
-JsonValue Interpreter::execute(const std::string &procedureName, const JsonValue &input) const {
+std::optional<JsonValue> Interpreter::execute(const std::string &procedureName, const JsonValue &input) {
     auto it = procedures_.find(procedureName);
     if (it == procedures_.end()) {
         throw TrxException("Procedure not found: " + procedureName);
@@ -881,12 +1018,17 @@ JsonValue Interpreter::execute(const std::string &procedureName, const JsonValue
         dbDriver_->beginTransaction();
     }
 
-    ExecutionContext context{*this, {}, false, std::nullopt};
+    ExecutionContext context{*this, {}, false, std::nullopt, false, procedure->output.has_value()};
     context.variables.emplace("input", input);
-    context.variables.emplace("output", JsonValue::object());
+    if (procedure->output) {
+        context.variables.emplace("output", JsonValue::object());
+    }
 
     try {
         executeStatements(procedure->body, context);
+        if (procedure->output) {
+            throw std::runtime_error("Function must return a value");
+        }
         // Commit on successful completion
         if (alreadyInTransaction) {
             dbDriver_->executeSql("RELEASE SAVEPOINT " + savepointName);
@@ -915,12 +1057,15 @@ JsonValue Interpreter::execute(const std::string &procedureName, const JsonValue
         throw;
     }
 
-    const auto outIt = context.variables.find("output");
-    if (outIt == context.variables.end()) {
-        throw std::runtime_error("Procedure execution did not produce output");
+    if (procedure->output) {
+        const auto outIt = context.variables.find("output");
+        if (outIt == context.variables.end()) {
+            throw std::runtime_error("Function execution did not produce output");
+        }
+        return outIt->second;
+    } else {
+        return std::nullopt;
     }
-
-    return outIt->second;
 }
 
 } // namespace trx::runtime

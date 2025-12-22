@@ -1,0 +1,5 @@
+VAR x := 42;
+
+FUNCTION test_json() {
+    return x;
+}

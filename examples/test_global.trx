@@ -1,0 +1,6 @@
+var global_var := 42;
+
+FUNCTION test_global() : INTEGER {
+    output := global_var;
+    trace('output'+output);
+}

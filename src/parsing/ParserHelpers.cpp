@@ -3,6 +3,7 @@
 #include "trx/ast/Nodes.h"
 
 #include <sstream>
+#include <unordered_set>
 #include <utility>
 
 namespace trx::parsing {
@@ -57,10 +58,19 @@ void ParserContext::addTable(ast::TableDecl table) {
     module_.declarations.emplace_back(std::move(table));
 }
 
+void ParserContext::addVariableDeclarationStatement(ast::VariableDeclarationStatement varDecl) {
+    module_.declarations.emplace_back(std::move(varDecl));
+}
+
 ast::ParameterDecl ParserContext::makeParameter(std::string name, const ast::SourceLocation &location) {
     ast::ParameterDecl parameter{.type = {.name = std::move(name), .location = location}};
 
-    if (recordIndex_.find(parameter.type.name) == recordIndex_.end()) {
+    // Check if it's a built-in type
+    static const std::unordered_set<std::string> builtinTypes = {
+        "_CHAR", "_INTEGER", "_SMALLINT", "_DECIMAL", "_BOOLEAN", "_FILE", "_BLOB", "DATE", "TIME", "JSON"
+    };
+
+    if (recordIndex_.find(parameter.type.name) == recordIndex_.end() && builtinTypes.find(parameter.type.name) == builtinTypes.end()) {
         pendingParameters_.emplace_back(parameter.type.name, location);
     }
 

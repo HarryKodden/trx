@@ -3,6 +3,7 @@
 #include "trx/runtime/Interpreter.h"
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -14,10 +15,35 @@ void printUsage() {
     std::cerr << "  trx_compiler <source.trx>\n";
     std::cerr << "  trx_compiler [--procedure <name>] [--db-type <type>] [--db-connection <conn>] <source.trx>\n";
     std::cerr << "  trx_compiler serve [--port <port>] [--procedure <name>] [--db-type <type>] [--db-connection <conn>] [source paths...]\n";
-    std::cerr << "    If no source paths are provided, all .trx files in the current directory are used.\n";
+    std::cerr << "  trx_compiler list <source.trx>\n";
+    std::cerr << "    If no source paths are provided for serve, all .trx files in the current directory are used.\n";
     std::cerr << "\nDatabase options:\n";
     std::cerr << "  --db-type <type>        Database type: sqlite, postgresql, odbc (default: sqlite)\n";
     std::cerr << "  --db-connection <conn>  Database connection string/path (default: :memory: for sqlite)\n";
+}
+
+void printDiagnostic(const trx::diagnostics::Diagnostic &diagnostic, const std::filesystem::path &filePath) {
+    std::ifstream file(filePath);
+    if (!file.is_open()) {
+        std::cerr << diagnostic.message << "\n";
+        return;
+    }
+
+    std::string line;
+    std::size_t currentLine = 1;
+    while (std::getline(file, line)) {
+        if (currentLine == diagnostic.location.line) {
+            std::cerr << filePath.string() << ":" << diagnostic.location.line << ":" << diagnostic.location.column << ": " << diagnostic.message << "\n";
+            std::cerr << line << "\n";
+            std::string caret(diagnostic.location.column - 1, ' ');
+            caret += "^";
+            std::cerr << caret << "\n";
+            return;
+        }
+        ++currentLine;
+    }
+    // If line not found, just print the message
+    std::cerr << diagnostic.message << "\n";
 }
 
 } // namespace
@@ -29,6 +55,7 @@ int main(int argc, char *argv[]) {
     }
 
     bool serveMode = false;
+    bool listMode = false;
     trx::cli::ServeOptions serveOptions;
     std::vector<std::filesystem::path> sourcePaths;
     std::optional<std::string> procedureToExecute;
@@ -44,6 +71,10 @@ int main(int argc, char *argv[]) {
         }
         if (argument == "serve" || argument == "--serve") {
             serveMode = true;
+            continue;
+        }
+        if (argument == "list") {
+            listMode = true;
             continue;
         }
         if ((argument == "--port" || argument == "-p") && index + 1 < argc) {
@@ -116,6 +147,35 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    if (listMode) {
+        if (sourcePaths.empty()) {
+            std::cerr << "Missing TRX source file for list\n";
+            printUsage();
+            return 1;
+        }
+        if (sourcePaths.size() > 1) {
+            std::cerr << "Only one source file supported for list\n";
+            return 1;
+        }
+        auto sourcePath = sourcePaths[0];
+
+        trx::parsing::ParserDriver driver;
+        if (!driver.parseFile(sourcePath)) {
+            for (const auto &diagnostic : driver.diagnostics().messages()) {
+                printDiagnostic(diagnostic, sourcePath);
+            }
+            return 1;
+        }
+
+        std::cout << "Procedures and functions in " << sourcePath.string() << ":\n";
+        for (const auto &decl : driver.context().module().declarations) {
+            if (const auto *proc = std::get_if<trx::ast::ProcedureDecl>(&decl)) {
+                std::cout << "  " << proc->name.name << "\n";
+            }
+        }
+        return 0;
+    }
+
     if (serveMode) {
         if (sourcePaths.empty()) {
             sourcePaths.push_back(".");
@@ -138,7 +198,7 @@ int main(int argc, char *argv[]) {
     trx::parsing::ParserDriver driver;
     if (!driver.parseFile(sourcePath)) {
         for (const auto &diagnostic : driver.diagnostics().messages()) {
-            std::cerr << diagnostic.message << "\n";
+            printDiagnostic(diagnostic, sourcePath);
         }
         return 1;
     }
@@ -150,9 +210,11 @@ int main(int argc, char *argv[]) {
         trx::runtime::Interpreter interpreter{driver.context().module(), std::move(dbDriver)};
         try {
             trx::runtime::JsonValue input = trx::runtime::JsonValue::object(); // For now, empty input
-            trx::runtime::JsonValue result = interpreter.execute(*procedureToExecute, input);
+            auto result = interpreter.execute(*procedureToExecute, input);
             std::cout << "Executed procedure '" << *procedureToExecute << "' successfully\n";
-            std::cout << "Result: " << result << "\n";
+            if (result) {
+                std::cout << "Result: " << *result << "\n";
+            }
         } catch (const std::exception &e) {
             std::cerr << "Error executing procedure '" << *procedureToExecute << "': " << e.what() << "\n";
             return 1;

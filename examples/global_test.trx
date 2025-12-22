@@ -1,0 +1,20 @@
+VAR global_counter := 0;
+VAR global_name := "Global Test";
+
+FUNCTION increment_counter() : INTEGER {
+    global_counter := global_counter + 1;
+    trace("Counter incremented to: " + global_counter);
+    RETURN global_counter;
+}
+
+FUNCTION greet() : _INTEGER {
+    trace("Hello from global function! Name: " + global_name);
+    RETURN 42;
+}
+
+increment_counter();
+greet();
+
+FUNCTION bad_func() : INTEGER {
+    trace("This function has no return");
+}

@@ -1,0 +1,5 @@
+VAR config := {"database": "sqlite"};
+
+FUNCTION main() {
+    trace(config);
+}
