@@ -70,6 +70,7 @@ IDENT        [A-Za-z_][A-Za-z0-9_]*
 PATH         [A-Za-z_][A-Za-z0-9_]*([.][A-Za-z0-9_]+)+
 NUMBER       (-?[0-9]+(\.[0-9]+)?)
 STRING       \"([^\"\\]|\\.)*\"
+SSTRING      \'([^\'\\]|\\.)*\'
 SQLIDENT     [A-Za-z_][A-Za-z0-9_]*
 SQLPATH      {SQLIDENT}(\.{SQLIDENT})*
 SQLTEXT      [^\s:;]+
@@ -86,13 +87,9 @@ SQLTEXT      [^\s:;]+
 
 [Ii][Nn][Cc][Ll][Uu][Dd][Ee]  { return INCLUDE; }
 [Cc][Oo][Nn][Ss][Tt][Aa][Nn][Tt] { return CONSTANT; }
-[Pp][Rr][Oo][Cc][Ee][Dd][Uu][Rr][Ee] { return PROCEDURE; }
+[Ff][Uu][Nn][Cc][Tt][Ii][Oo][Nn] { return FUNCTION; }
 [Rr][Ee][Cc][Oo][Rr][Dd] { return RECORD; }
-
-[Tt][Aa][Bb][Ll][Ee] { return TABLE; }
 [Nn][Uu][Ll][Ll] { return NULL_K; }
-[Pp][Rr][Ii][Mm][Aa][Rr][Yy] { return PRIMARY; }
-[Kk][Ee][Yy] { return KEY; }
 [Ii][Ff] { return IF; }
 [Tt][Hh][Ee][Nn] { return THEN; }
 [Ee][Ll][Ss][Ee] { return ELSE; }
@@ -100,7 +97,6 @@ SQLTEXT      [^\s:;]+
 [Ss][Ww][Ii][Tt][Cc][Hh] { return SWITCH; }
 [Cc][Aa][Ss][Ee] { return CASE; }
 [Dd][Ee][Ff][Aa][Uu][Ll][Tt] { return DEFAULT; }
-[Cc][Aa][Ll][Ll] { return CALL; }
 [Tt][Rr][Uu][Ee] { return TRUE; }
 [Ff][Aa][Ll][Ss][Ee] { return FALSE; }
 [Aa][Nn][Dd] { return AND; }
@@ -158,6 +154,10 @@ SQLTEXT      [^\s:;]+
                 }
 
 {STRING}        {
+                    YYLVAL.text = duplicate_string_literal(yytext, yyleng);
+                    return STRING;
+                }
+{SSTRING}       {
                     YYLVAL.text = duplicate_string_literal(yytext, yyleng);
                     return STRING;
                 }

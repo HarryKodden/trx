@@ -3,64 +3,47 @@ INCLUDE user.inc;
 CONSTANT PI 3.14159;
 CONSTANT APP_NAME "TRX Interpreter";
 
-RECORD ADDRESS {
+record ADDRESS {
     STREET CHAR(64);
     ZIP INTEGER;
 }
 
-RECORD PERSON {
+record PERSON {
     ID INTEGER;
     NAME CHAR(64);
     AGE INTEGER;
     ACTIVE BOOLEAN;
     SALARY DECIMAL(10,2);
-    HOME ADDRESS;
 }
 
-RECORD EMPLOYEE {
-    PERSON_DATA PERSON;
+record EMPLOYEE {
     DEPARTMENT CHAR(32);
 }
 
-PROCEDURE process_employee(EMPLOYEE, EMPLOYEE) {
-    output := input;
-
-    IF input.PERSON_DATA.ACTIVE THEN {
-        output.PERSON_DATA.SALARY := input.PERSON_DATA.SALARY * 1.1;
-    } ELSE {
-        output.PERSON_DATA.SALARY := 0;
-    }
-
-    WHILE input.PERSON_DATA.SALARY < 50000 {
-        output.PERSON_DATA.SALARY := output.PERSON_DATA.SALARY + 1000;
-    }
-
-    SWITCH input.DEPARTMENT {
-        CASE "ENG" {
-            output.PERSON_DATA.SALARY := output.PERSON_DATA.SALARY * 1.15;
-        }
-        CASE "SALES" {
-            output.PERSON_DATA.SALARY := output.PERSON_DATA.SALARY * 1.10;
-        }
-        DEFAULT {
-            output.PERSON_DATA.SALARY := output.PERSON_DATA.SALARY * 1.05;
-        }
-    }
-
-    EXEC SQL INSERT INTO EMPLOYEES (ID, NAME, SALARY)
-             VALUES (:input.PERSON_DATA.ID, :input.PERSON_DATA.NAME, :input.PERSON_DATA.SALARY);
-
-    EXEC SQL DECLARE emp_cursor CURSOR FOR
-             SELECT NAME FROM EMPLOYEES WHERE ID = :input.PERSON_DATA.ID;
-
-    EXEC SQL OPEN emp_cursor;
-    EXEC SQL FETCH emp_cursor INTO :output.PERSON_DATA.NAME;
-    EXEC SQL CLOSE emp_cursor;
-
-    EXEC SQL SELECT NAME, SALARY FROM EMPLOYEES 
-             WHERE ID = :input.PERSON_DATA.ID;
+function inner() {
+    trace('Hello world');
 }
 
-PROCEDURE calculate_bonus(PERSON, PERSON) {
+function process_employee(PERSON) : PERSON {
+    output := input;
+
+    IF input.ACTIVE THEN {
+        output.SALARY := input.SALARY * 1.1;
+    } ELSE {
+        output.SALARY := 0;
+    }
+
+    inner();
+
+    WHILE input.SALARY < 50000 {
+        output.SALARY := output.SALARY + 1000;
+    }
+
+    IF input.ACTIVE THEN {
+        output.SALARY := output.SALARY * 1.15;
+    }
+}
+
+function calculate_bonus(PERSON) : PERSON {
     output.SALARY := input.SALARY * 1.1;
 }

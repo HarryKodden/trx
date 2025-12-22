@@ -20,6 +20,7 @@ namespace {
 using FieldList = std::vector<trx::ast::RecordField>;
 using StatementList = std::vector<trx::ast::Statement>;
 using CaseList = std::vector<trx::ast::SwitchCase>;
+using ExpressionList = std::vector<trx::ast::ExpressionPtr>;
 
 struct SqlFragments {
     std::string sql;
@@ -99,6 +100,14 @@ inline SqlFragments *newSqlFragments() {
 
 inline SqlFragments *sqlFragmentsFrom(void *ptr) {
     return static_cast<SqlFragments *>(ptr);
+}
+
+inline ExpressionList *newExpressionList() {
+    return new ExpressionList();
+}
+
+inline ExpressionList *expressionListFrom(void *ptr) {
+    return static_cast<ExpressionList *>(ptr);
 }
 
 inline FieldFormat *newFieldFormat() {
@@ -399,9 +408,8 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 
 %token <text> IDENT STRING PATH SQL_TEXT SQL_VARIABLE
 %token <number> NUMBER
-%token INCLUDE CONSTANT PROCEDURE TABLE PRIMARY KEY NULL_K RECORD
+%token INCLUDE CONSTANT FUNCTION TABLE PRIMARY KEY NULL_K RECORD
 %token IF THEN ELSE WHILE SWITCH CASE DEFAULT
-%token CALL
 %token EXEC_SQL
 %token ASSIGN
 %token AND OR NOT TRUE FALSE
@@ -411,15 +419,14 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 %token LBRACE RBRACE LPAREN RPAREN COMMA SEMICOLON
 
 %type <text> identifier
-%type <text> parameter
+%type <text> input_type
+%type <text> output_type
 %type <text> include_target
 %type <ptr> fields field_def
-%type <ptr> procedure_body block statement_list statement assignment_statement call_statement if_statement else_clause while_statement switch_statement case_clauses case_clause default_clause sql_statement sql_chunks sql_chunk call_argument
+%type <ptr> procedure_body block statement_list statement assignment_statement if_statement else_clause while_statement switch_statement case_clauses case_clause default_clause sql_statement expression_statement arguments sql_chunks sql_chunk
 %type <ptr> format_decl
 %type <ptr> variable expression variable_reference
 %type <ptr> logical_or_expression logical_and_expression equality_expression relational_expression additive_expression multiplicative_expression unary_expression primary_expression literal
-%type <ptr> table_decl table_columns table_column_def table_column_attrs
-%type <text> column_type
 %type <number> dimension
 
 %left OR
@@ -446,8 +453,7 @@ definition
     : include_decl
     | constant_decl
     | record_decl
-    | table_decl
-    | procedure_decl
+    | function_decl
     ;
 
 include_decl
@@ -504,23 +510,6 @@ record_decl
           }
 
           driver.context().addRecord(std::move(record));
-          std::free($2);
-      }
-    ;
-
-table_decl
-    : TABLE identifier LBRACE table_columns RBRACE
-      {
-          trx::ast::TableDecl table;
-          table.name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)};
-
-          auto list = tableColumnListFrom($4);
-          if (list) {
-              table.columns = std::move(*list);
-              delete list;
-          }
-
-          driver.context().addTable(std::move(table));
           std::free($2);
       }
     ;
@@ -695,136 +684,6 @@ field_def
       }
     ;
 
-table_columns
-    : /* empty */
-      {
-          $$ = newTableColumnList();
-      }
-    | table_columns table_column_def SEMICOLON
-      {
-          auto list = tableColumnListFrom($1);
-          auto single = tableColumnListFrom($2);
-          list->insert(list->end(), single->begin(), single->end());
-          delete single;
-          $$ = list;
-      }
-    ;
-
-table_column_def
-    : identifier column_type table_column_attrs
-      {
-          auto list = newTableColumnList();
-          trx::ast::TableColumn column;
-          column.name = {.name = $1 ? std::string($1) : std::string{}, .location = makeLocation(driver, @1)};
-          column.typeName = $2 ? std::string($2) : std::string{};
-          
-          auto attrs = tableColumnAttrsFrom($3);
-          if (attrs) {
-              column.isPrimaryKey = attrs->isPrimaryKey;
-              column.isNullable = attrs->isNullable;
-              column.length = attrs->length;
-              column.scale = attrs->scale;
-              column.defaultValue = attrs->defaultValue;
-              delete attrs;
-          }
-          
-          list->push_back(std::move(column));
-          std::free($1);
-          std::free($2);
-          $$ = list;
-      }
-    ;
-
-column_type
-    : _CHAR
-      {
-          $$ = strdup("CHAR");
-      }
-    | _INTEGER
-      {
-          $$ = strdup("INTEGER");
-      }
-    | _SMALLINT
-      {
-          $$ = strdup("SMALLINT");
-      }
-    | _DECIMAL
-      {
-          $$ = strdup("DECIMAL");
-      }
-    | _BOOLEAN
-      {
-          $$ = strdup("BOOLEAN");
-      }
-    | DATE
-      {
-          $$ = strdup("DATE");
-      }
-    | TIME
-      {
-          $$ = strdup("TIME");
-      }
-    | _FILE
-      {
-          $$ = strdup("FILE");
-      }
-    | _BLOB
-      {
-          $$ = strdup("BLOB");
-      }
-    ;
-
-table_column_attrs
-    : /* empty */
-      {
-          $$ = newTableColumnAttrs();
-      }
-    | table_column_attrs PRIMARY KEY
-      {
-          auto attrs = tableColumnAttrsFrom($1);
-          attrs->isPrimaryKey = true;
-          $$ = attrs;
-      }
-    | table_column_attrs NOT NULL_K
-      {
-          auto attrs = tableColumnAttrsFrom($1);
-          attrs->isNullable = false;
-          $$ = attrs;
-      }
-    | table_column_attrs NULL_K
-      {
-          auto attrs = tableColumnAttrsFrom($1);
-          attrs->isNullable = true;
-          $$ = attrs;
-      }
-    | table_column_attrs LPAREN NUMBER RPAREN
-      {
-          auto attrs = tableColumnAttrsFrom($1);
-          attrs->length = toLength($3);
-          $$ = attrs;
-      }
-    | table_column_attrs LPAREN NUMBER COMMA NUMBER RPAREN
-      {
-          auto attrs = tableColumnAttrsFrom($1);
-          attrs->length = toLength($3);
-          attrs->scale = toScale($5);
-          $$ = attrs;
-      }
-    | table_column_attrs DEFAULT STRING
-      {
-          auto attrs = tableColumnAttrsFrom($1);
-          attrs->defaultValue = $3 ? std::string($3) : std::string{};
-          std::free($3);
-          $$ = attrs;
-      }
-    | table_column_attrs DEFAULT NUMBER
-      {
-          auto attrs = tableColumnAttrsFrom($1);
-          attrs->defaultValue = std::to_string($3);
-          $$ = attrs;
-      }
-    ;
-
 dimension
     : /* empty */
       {
@@ -861,8 +720,8 @@ format_decl
       }
     ;
 
-procedure_decl
-    : PROCEDURE identifier LPAREN parameter COMMA parameter RPAREN procedure_body
+function_decl
+    : FUNCTION identifier LPAREN input_type RPAREN output_type procedure_body
         {
             trx::ast::ProcedureDecl procedure;
             procedure.name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)};
@@ -877,7 +736,7 @@ procedure_decl
                 std::free($6);
             }
 
-            auto body = statementListFrom($8);
+            auto body = statementListFrom($7);
             if (body) {
                 procedure.body = std::move(*body);
                 delete body;
@@ -930,10 +789,6 @@ statement
         {
             $$ = $1;
         }
-    | call_statement
-        {
-            $$ = $1;
-        }
     | if_statement
         {
                 $$ = $1;
@@ -949,6 +804,10 @@ statement
     | sql_statement
         {
                 $$ = $1;
+        }
+    | expression_statement
+        {
+            $$ = $1;
         }
     ;
 
@@ -966,52 +825,6 @@ assignment_statement
           delete target;
           delete value;
           $$ = stmt;
-      }
-    ;
-
-call_statement
-    : variable ASSIGN CALL identifier LPAREN call_argument RPAREN SEMICOLON
-      {
-          auto stmt = new trx::ast::Statement();
-          stmt->location = makeLocation(driver, @1);
-          auto outputVar = variableFrom($1);
-          trx::ast::CallStatement node;
-          node.name = $4 ? std::string($4) : std::string{};
-          node.output = std::move(*outputVar);
-          delete outputVar;
-
-          auto argument = optionalVariableFrom($6);
-          if (argument && argument->has_value()) {
-              node.input = std::move(argument->value());
-          } else {
-              node.input = std::nullopt;
-          }
-          if (argument) {
-              delete argument;
-          }
-          std::free($4);
-          node.sync = false;
-          stmt->node = std::move(node);
-          $$ = stmt;
-      }
-    ;
-
-call_argument
-    : /* empty */
-      {
-          $$ = newOptionalVariable();
-      }
-    | variable
-      {
-          auto optionalVar = newOptionalVariable();
-          auto var = variableFrom($1);
-          optionalVar->emplace(std::move(*var));
-          delete var;
-          $$ = optionalVar;
-      }
-    | NULL_K
-      {
-          $$ = newOptionalVariable();
       }
     ;
 
@@ -1147,6 +960,45 @@ sql_statement
           }
           stmt->node = std::move(node);
           $$ = stmt;
+      }
+    ;
+
+expression_statement
+    : expression SEMICOLON
+      {
+          auto stmt = new trx::ast::Statement();
+          stmt->location = makeLocation(driver, @1);
+          // For expression statements, we evaluate the expression but discard the result
+          // This allows function calls like debug(), info(), error() to be used as statements
+          auto expr = expressionFrom($1);
+          trx::ast::ExpressionStatement node;
+          node.expression = std::move(*expr);
+          stmt->node = std::move(node);
+          delete expr;
+          $$ = stmt;
+      }
+    ;
+
+arguments
+    : /* empty */
+      {
+          $$ = newExpressionList();
+      }
+    | expression
+      {
+          auto list = newExpressionList();
+          auto expr = expressionFrom($1);
+          list->push_back(std::move(*expr));
+          delete expr;
+          $$ = list;
+      }
+    | arguments COMMA expression
+      {
+          auto list = expressionListFrom($1);
+          auto expr = expressionFrom($3);
+          list->push_back(std::move(*expr));
+          delete expr;
+          $$ = list;
       }
     ;
 
@@ -1322,6 +1174,14 @@ primary_expression
             {
                     $$ = $1;
             }
+        | identifier LPAREN arguments RPAREN
+            {
+                    auto args = expressionListFrom($3);
+                    auto expr = wrapExpression(trx::ast::makeFunctionCall($1 ? std::string($1) : std::string{}, std::move(*args)));
+                    delete args;
+                    std::free($1);
+                    $$ = expr;
+            }
         | LPAREN expression RPAREN
             {
                     $$ = expressionFrom($2);
@@ -1382,8 +1242,8 @@ variable
             }
         ;
 
-parameter
-    : NULL_K
+input_type
+    : /* empty */
       {
           $$ = nullptr;
       }
@@ -1391,7 +1251,16 @@ parameter
       {
           $$ = $1;
       }
-    ;
+
+output_type
+    : /* empty */
+      {
+          $$ = nullptr;
+      }
+    | ':' identifier
+      {
+          $$ = $2;
+      }
 
 identifier
     : IDENT

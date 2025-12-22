@@ -1,0 +1,28 @@
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: trx
+      POSTGRES_USER: trx
+      POSTGRES_PASSWORD: password
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trx -d trx"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  trx:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_TYPE: ODBC
+      DATABASE_CONNECTION_STRING: DRIVER={PostgreSQL Unicode};SERVER=postgres;PORT=5432;DATABASE=trx;UID=trx;PWD=password;
+    command: ["serve", "/workspace/examples/sample.trx"]

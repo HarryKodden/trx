@@ -187,7 +187,43 @@ JsonValue evaluateFunctionCall(const trx::ast::FunctionCallExpression &call, Exe
         if (pos >= s.size()) return JsonValue("");
         return JsonValue(s.substr(pos, length));
     }
-    // For user-defined procedures, could add recursive call, but for now throw
+    if (call.functionName == "debug") {
+        if (call.arguments.size() != 1) throw std::runtime_error("debug function takes 1 argument");
+        JsonValue arg = evaluateExpression(call.arguments[0], context);
+        std::cout << "DEBUG: " << arg << std::endl;
+        return JsonValue(nullptr); // Logging functions return null
+    }
+    if (call.functionName == "info") {
+        if (call.arguments.size() != 1) throw std::runtime_error("info function takes 1 argument");
+        JsonValue arg = evaluateExpression(call.arguments[0], context);
+        std::cout << "INFO: " << arg << std::endl;
+        return JsonValue(nullptr); // Logging functions return null
+    }
+    if (call.functionName == "error") {
+        if (call.arguments.size() != 1) throw std::runtime_error("error function takes 1 argument");
+        JsonValue arg = evaluateExpression(call.arguments[0], context);
+        std::cerr << "ERROR: " << arg << std::endl;
+        return JsonValue(nullptr); // Logging functions return null
+    }
+    if (call.functionName == "trace") {
+        if (call.arguments.size() != 1) throw std::runtime_error("trace function takes 1 argument");
+        JsonValue arg = evaluateExpression(call.arguments[0], context);
+        std::cout << "TRACE: " << arg << std::endl;
+        return JsonValue(nullptr); // Logging functions return null
+    }
+    // For user-defined procedures
+    const auto *proc = context.interpreter.getProcedure(call.functionName);
+    if (proc) {
+        bool hasInput = proc->input.has_value();
+        if (hasInput) {
+            if (call.arguments.size() != 1) throw std::runtime_error("Procedure call expects 1 argument");
+            JsonValue arg = evaluateExpression(call.arguments[0], context);
+            return context.interpreter.execute(call.functionName, arg);
+        } else {
+            if (call.arguments.size() != 0) throw std::runtime_error("Procedure call expects no arguments");
+            return context.interpreter.execute(call.functionName, JsonValue(nullptr));
+        }
+    }
     throw std::runtime_error("Function not supported: " + call.functionName);
 }
 
@@ -476,6 +512,11 @@ void executeTrace(const trx::ast::TraceStatement &trace, ExecutionContext &conte
     std::cout << "TRACE: " << val << std::endl;
 }
 
+void executeExpression(const trx::ast::ExpressionStatement &exprStmt, ExecutionContext &context) {
+    // Evaluate the expression and discard the result
+    evaluateExpression(exprStmt.expression, context);
+}
+
 void executeSystem(const trx::ast::SystemStatement &systemStmt, ExecutionContext &context) {
     JsonValue cmd = evaluateExpression(systemStmt.command, context);
     if (std::holds_alternative<std::string>(cmd.data)) {
@@ -674,6 +715,7 @@ void executeStatement(const trx::ast::Statement &statement, ExecutionContext &co
             [&](const trx::ast::SwitchStatement &switchStmt) { executeSwitch(switchStmt, context); },
             [&](const trx::ast::SortStatement &sortStmt) { executeSort(sortStmt, context); },
             [&](const trx::ast::TraceStatement &trace) { executeTrace(trace, context); },
+            [&](const trx::ast::ExpressionStatement &exprStmt) { executeExpression(exprStmt, context); },
             [&](const trx::ast::SystemStatement &systemStmt) { executeSystem(systemStmt, context); },
             [&](const trx::ast::BatchStatement &batchStmt) { executeBatch(batchStmt, context); },
             [&](const trx::ast::CallStatement &callStmt) { executeCall(callStmt, context); },
@@ -723,18 +765,36 @@ Interpreter::Interpreter(const trx::ast::Module &module, std::unique_ptr<Databas
         }
     }
 
-    // Initialize database driver (use SQLite by default if none provided)
+    // Initialize database driver (use environment variables or SQLite by default if none provided)
     if (!dbDriver_) {
-        DatabaseConfig config;
-        config.type = DatabaseType::SQLITE;
-        config.databasePath = ":memory:"; // In-memory database
-        dbDriver_ = createDatabaseDriver(config);
+        const char* dbType = std::getenv("DATABASE_TYPE");
+        if (dbType && std::string(dbType) == "ODBC") {
+            DatabaseConfig config;
+            config.type = DatabaseType::ODBC;
+            const char* connStr = std::getenv("DATABASE_CONNECTION_STRING");
+            if (connStr) {
+                config.connectionString = connStr;
+            } else {
+                throw std::runtime_error("DATABASE_CONNECTION_STRING environment variable must be set for ODBC");
+            }
+            dbDriver_ = createDatabaseDriver(config);
+        } else {
+            DatabaseConfig config;
+            config.type = DatabaseType::SQLITE;
+            config.databasePath = ":memory:"; // In-memory database
+            dbDriver_ = createDatabaseDriver(config);
+        }
     }
 
     dbDriver_->initialize();
 }
 
 Interpreter::~Interpreter() = default;
+
+const trx::ast::ProcedureDecl* Interpreter::getProcedure(const std::string &name) const {
+    auto it = procedures_.find(name);
+    return it != procedures_.end() ? it->second : nullptr;
+}
 
 JsonValue Interpreter::execute(const std::string &procedureName, const JsonValue &input) const {
     auto it = procedures_.find(procedureName);
@@ -743,12 +803,10 @@ JsonValue Interpreter::execute(const std::string &procedureName, const JsonValue
     }
     const auto *procedure = it->second;
 
-    if (!procedure->input || !procedure->output) {
-        throw std::runtime_error("Procedure must declare both input and output parameters");
-    }
-
-    if (procedure->input->type.name != procedure->output->type.name) {
-        throw std::runtime_error("Procedure input and output types must match");
+    if (procedure->input && procedure->output) {
+        if (procedure->input->type.name != procedure->output->type.name) {
+            throw std::runtime_error("Procedure input and output types must match");
+        }
     }
 
     ExecutionContext context{*this, {}, false, std::nullopt};

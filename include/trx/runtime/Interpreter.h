@@ -16,6 +16,8 @@ public:
 
     JsonValue execute(const std::string &procedureName, const JsonValue &input) const;
 
+    const ast::ProcedureDecl* getProcedure(const std::string &name) const;
+
     // Accessors for SQL operations
     DatabaseDriver& db() const { return *dbDriver_; }
 

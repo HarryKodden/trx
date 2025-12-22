@@ -96,6 +96,27 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    // Check environment variables for database configuration if not set via command line
+    if (const char* dbTypeEnv = std::getenv("DATABASE_TYPE")) {
+        std::string dbType = dbTypeEnv;
+        if (dbType == "ODBC") {
+            dbConfig.type = trx::runtime::DatabaseType::ODBC;
+        } else if (dbType == "POSTGRESQL") {
+            dbConfig.type = trx::runtime::DatabaseType::POSTGRESQL;
+        } else if (dbType == "SQLITE") {
+            dbConfig.type = trx::runtime::DatabaseType::SQLITE;
+        }
+    }
+    if (const char* dbConnEnv = std::getenv("DATABASE_CONNECTION_STRING")) {
+        if (dbConfig.type == trx::runtime::DatabaseType::ODBC) {
+            dbConfig.connectionString = dbConnEnv;
+        } else if (dbConfig.type == trx::runtime::DatabaseType::POSTGRESQL) {
+            dbConfig.connectionString = dbConnEnv;
+        } else {
+            dbConfig.databasePath = dbConnEnv;
+        }
+    }
+
     if (!sourcePath) {
         std::cerr << "Missing TRX source file\n";
         printUsage();

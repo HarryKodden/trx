@@ -2,6 +2,8 @@
 
 #include "trx/runtime/DatabaseDriver.h"
 
+#include <sql.h>
+#include <sqlext.h>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -32,8 +34,9 @@ public:
 
 private:
     DatabaseConfig config_;
-    void* connection_; // SQLHDBC in real implementation
-    std::unordered_map<std::string, void*> cursors_; // SQLHSTMT in real implementation
+    SQLHENV env_; // ODBC environment handle
+    SQLHDBC connection_; // ODBC connection handle
+    std::unordered_map<std::string, SQLHSTMT> statements_; // ODBC statement handles for cursors
 };
 
 } // namespace trx::runtime

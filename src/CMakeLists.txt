@@ -27,6 +27,12 @@ find_package(FLEX REQUIRED)
 # Find SQLite3
 find_package(SQLite3 REQUIRED)
 
+# Find ODBC
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(ODBC REQUIRED odbc)
+target_link_libraries(trx_core PRIVATE ${ODBC_LIBRARIES})
+target_include_directories(trx_core PRIVATE ${ODBC_INCLUDE_DIRS})
+
 BISON_TARGET(TRXParser
   ${CMAKE_CURRENT_SOURCE_DIR}/../tools/grammar/trx_parser.y
   ${CMAKE_CURRENT_BINARY_DIR}/trx_parser.cpp
@@ -63,7 +69,7 @@ elseif(FLEX_LIBRARIES)
   target_link_libraries(trx_core PRIVATE ${FLEX_LIBRARIES})
 endif()
 
-target_link_libraries(trx_core PRIVATE SQLite::SQLite3)
+target_link_libraries(trx_core PRIVATE SQLite::SQLite3 ${ODBC_LIBRARIES})
 
 add_executable(trx_compiler
   cli/main.cpp

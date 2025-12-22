@@ -19,6 +19,10 @@ struct TraceStatement {
     ExpressionPtr value;
 };
 
+struct ExpressionStatement {
+    ExpressionPtr expression;
+};
+
 struct ValidateStatement {
     VariableExpression variable;
     ExpressionPtr rule;
@@ -116,6 +120,7 @@ struct BlockStatement {
 
 struct Statement {
     using Node = std::variant<TraceStatement,
+                              ExpressionStatement,
                               ValidateStatement,
                               ReturnStatement,
                               SystemStatement,

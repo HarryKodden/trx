@@ -14,6 +14,8 @@ RUN apt-get update \
        bison \
        ninja-build \
        libsqlite3-dev \
+       unixodbc-dev \
+       pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
@@ -41,9 +43,13 @@ RUN apt-get update \
        build-essential \
        flex \
        bison \
+       unixodbc \
+       odbc-postgresql \
+       pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /workspace/build/src/trx_compiler /usr/local/bin/trx_compiler
+COPY examples /workspace/examples
 
 ENTRYPOINT ["/usr/local/bin/trx_compiler"]
 CMD ["--help"]

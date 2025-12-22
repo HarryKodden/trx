@@ -466,6 +466,8 @@ private:
                 throw JsonParseError("Object keys must be strings");
             }
             std::string key = parseString();
+            // Convert key to uppercase for case-insensitive matching
+            std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
             skipWhitespace();
             expect(':');
             skipWhitespace();
@@ -556,22 +558,118 @@ std::string serializeJsonValue(const trx::runtime::JsonValue &value) {
     throw std::runtime_error("Unsupported JsonValue variant");
 }
 
-std::string buildSwaggerSpec(const std::vector<std::string> &procedures, int port) {
+std::string buildSwaggerSpec(const std::map<std::string, const trx::ast::ProcedureDecl *> &procedureLookup, const std::vector<const trx::ast::RecordDecl *> &records, int port) {
     std::ostringstream spec;
-    spec << "{\"openapi\":\"3.0.0\",\"info\":{\"title\":\"TRX Procedure Playground\",\"version\":\"0.1.0\"},";
-    spec << "\"paths\":{\"/execute\":{\"post\":{\"summary\":\"Execute TRX procedure\",";
-    spec << "\"requestBody\":{\"required\":true,\"content\":{\"application/json\":{\"schema\":{\"type\":\"object\",\"properties\":{\"procedure\":{\"type\":\"string\",\"enum\":[";
-    for (std::size_t i = 0; i < procedures.size(); ++i) {
-        if (i > 0) {
-            spec << ',';
+    spec << R"(
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "TRX Procedure Playground",
+    "version": "0.1.0"
+  },
+  "paths": {)";
+
+    // Add paths for each procedure
+    bool firstPath = true;
+    for (const auto &[name, proc] : procedureLookup) {
+        if (!firstPath) {
+            spec << ",";
         }
-        spec << '\"' << escapeJsonString(procedures[i]) << '\"';
+        firstPath = false;
+        spec << "\n    \"" << escapeJsonString("/" + name) << "\": {\n";
+        spec << "      \"post\": {\n";
+        spec << "        \"summary\": \"Execute " << escapeJsonString(name) << " procedure\",\n";
+        spec << "        \"requestBody\": {\n";
+        spec << "          \"required\": true,\n";
+        spec << "          \"content\": {\n";
+        spec << "            \"application/json\": {\n";
+        spec << "              \"schema\": ";
+        if (proc->input) {
+            spec << "{\"$ref\": \"#/components/schemas/" << escapeJsonString(proc->input->type.name) << "\"}";
+        } else {
+            spec << "{\"type\": \"object\"}";
+        }
+        spec << "\n            }\n";
+        spec << "          }\n";
+        spec << "        },\n";
+        spec << "        \"responses\": {\n";
+        spec << "          \"200\": {\n";
+        spec << "            \"description\": \"Execution succeeded\",\n";
+        spec << "            \"content\": {\n";
+        spec << "              \"application/json\": {\n";
+        spec << "                \"schema\": ";
+        if (proc->output) {
+            spec << "{\"$ref\": \"#/components/schemas/" << escapeJsonString(proc->output->type.name) << "\"}";
+        } else {
+            spec << "{\"type\": \"object\"}";
+        }
+        spec << "\n              }\n";
+        spec << "            }\n";
+        spec << "          },\n";
+        spec << "          \"400\": {\n";
+        spec << "            \"description\": \"Invalid request\"\n";
+        spec << "          },\n";
+        spec << "          \"500\": {\n";
+        spec << "            \"description\": \"Execution error\"\n";
+        spec << "          }\n";
+        spec << "        }\n";
+        spec << "      }\n";
+        spec << "    }";
     }
-    spec << "],\"description\":\"Name of the procedure to execute\"},";
-    spec << "\"input\":{\"type\":\"object\",\"description\":\"Input record matching the TRX definition\"}},\"required\":[\"procedure\",\"input\"]}}}},";
-    spec << "\"responses\":{\"200\":{\"description\":\"Execution succeeded\",\"content\":{\"application/json\":{\"schema\":{\"type\":\"object\",\"properties\":{\"output\":{\"type\":\"object\"}}}}}},";
-    spec << "\"400\":{\"description\":\"Invalid request\"},\"404\":{\"description\":\"Procedure not found\"},\"500\":{\"description\":\"Execution error\"}}}}},";
-    spec << "\"components\":{},\"servers\":[{\"url\":\"http://localhost:" << port << "/\"}]}";
+
+    spec << R"(
+  },
+  "components": {
+    "schemas": {)";
+
+    // Add schemas for records
+    bool firstSchema = true;
+    for (const auto *record : records) {
+        if (!firstSchema) {
+            spec << ",";
+        }
+        firstSchema = false;
+        spec << "\n      \"" << escapeJsonString(record->name.name) << "\": {\n";
+        spec << "        \"type\": \"object\",\n";
+        spec << "        \"properties\": {";
+        bool firstField = true;
+        for (const auto &field : record->fields) {
+            if (!firstField) {
+                spec << ",";
+            }
+            firstField = false;
+            spec << "\n          \"" << escapeJsonString(field.jsonName) << "\": {\n";
+            spec << "            \"type\": \"" << (field.typeName == "STRING" || field.typeName == "CHAR" ? "string" : field.typeName == "INTEGER" || field.typeName == "SMALLINT" ? "integer" : field.typeName == "DECIMAL" ? "number" : field.typeName == "BOOLEAN" ? "boolean" : "string") << "\"";
+            if (field.typeName == "CHAR" || field.typeName == "STRING") {
+                spec << ",\n            \"maxLength\": " << field.length;
+            }
+            spec << "\n          }";
+        }
+        spec << "\n        },\n";
+        spec << "        \"required\": [";
+        bool firstReq = true;
+        for (const auto &field : record->fields) {
+            if (!firstReq) {
+                spec << ",";
+            }
+            firstReq = false;
+            spec << "\n          \"" << escapeJsonString(field.jsonName) << "\"";
+        }
+        spec << "\n        ]\n";
+        spec << "      }";
+    }
+
+    spec << R"(
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:)" << port << R"(/"
+    }
+  ]
+}
+)";
+
     return spec.str();
 }
 
@@ -611,59 +709,52 @@ std::vector<const trx::ast::ProcedureDecl *> collectCallableProcedures(const trx
     return procedures;
 }
 
+std::vector<const trx::ast::RecordDecl *> collectRecords(const trx::ast::Module &module) {
+    std::vector<const trx::ast::RecordDecl *> records;
+    for (const auto &decl : module.declarations) {
+        if (const auto *record = std::get_if<trx::ast::RecordDecl>(&decl)) {
+            records.push_back(record);
+        }
+    }
+    return records;
+}
+
 HttpResponse makeErrorResponse(int status, std::string_view message) {
     HttpResponse response;
     response.status = status;
     response.contentType = "application/json";
     response.body = std::string("{\"error\":\"") + escapeJsonString(message) + "\"}";
+    response.extraHeaders.emplace_back("Access-Control-Allow-Origin", "*");
+    response.extraHeaders.emplace_back("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    response.extraHeaders.emplace_back("Access-Control-Allow-Headers", "Content-Type");
     return response;
 }
 
-HttpResponse handleExecute(const HttpRequest &request,
-                           const std::map<std::string, const trx::ast::ProcedureDecl *> &procedureLookup,
-                           const std::string &defaultProcedure,
-                           trx::runtime::Interpreter &interpreter) {
+HttpResponse handleExecuteProcedure(const HttpRequest &request,
+                                   const trx::ast::ProcedureDecl *procedure,
+                                   trx::runtime::Interpreter &interpreter) {
     if (request.method != "POST") {
-        return makeErrorResponse(405, "Only POST supported for /execute");
+        return makeErrorResponse(405, "Only POST supported");
     }
     if (!request.headers.count("content-type") || request.headers.at("content-type").find("application/json") == std::string::npos) {
         return makeErrorResponse(400, "Content-Type must be application/json");
     }
     try {
         JsonParser parser(request.body);
-        trx::runtime::JsonValue payload = parser.parse();
-        if (!std::holds_alternative<trx::runtime::JsonValue::Object>(payload.data)) {
+        trx::runtime::JsonValue input = parser.parse();
+        if (!std::holds_alternative<trx::runtime::JsonValue::Object>(input.data)) {
             return makeErrorResponse(400, "Request payload must be a JSON object");
         }
-        auto &object = std::get<trx::runtime::JsonValue::Object>(payload.data);
 
-        std::string procedureName = defaultProcedure;
-        if (auto it = object.find("procedure"); it != object.end()) {
-            if (!std::holds_alternative<std::string>(it->second.data)) {
-                return makeErrorResponse(400, "procedure must be a string");
-            }
-            procedureName = std::get<std::string>(it->second.data);
-        }
-
-        const auto procIt = procedureLookup.find(procedureName);
-        if (procIt == procedureLookup.end()) {
-            return makeErrorResponse(404, "Unknown procedure");
-        }
-
-        auto inputIt = object.find("input");
-        if (inputIt == object.end()) {
-            return makeErrorResponse(400, "Missing input section");
-        }
-        if (!std::holds_alternative<trx::runtime::JsonValue::Object>(inputIt->second.data)) {
-            return makeErrorResponse(400, "input must be a JSON object");
-        }
-
-        const trx::runtime::JsonValue output = interpreter.execute(procedureName, inputIt->second);
+        const trx::runtime::JsonValue output = interpreter.execute(procedure->name.name, input);
 
         HttpResponse response;
         response.status = 200;
         response.contentType = "application/json";
-        response.body = std::string("{\"output\":") + serializeJsonValue(output) + "}";
+        response.body = serializeJsonValue(output);
+        response.extraHeaders.emplace_back("Access-Control-Allow-Origin", "*");
+        response.extraHeaders.emplace_back("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        response.extraHeaders.emplace_back("Access-Control-Allow-Headers", "Content-Type");
         return response;
     } catch (const JsonParseError &error) {
         return makeErrorResponse(400, error.what());
@@ -733,6 +824,7 @@ int runSwaggerServer(const std::filesystem::path &sourcePath, ServeOptions optio
 
     const auto &module = driver.context().module();
     const auto callableProcedures = collectCallableProcedures(module);
+    const auto records = collectRecords(module);
     if (callableProcedures.empty()) {
         if (sourceFiles.size() == 1) {
             std::cerr << "No callable procedures (with matching input/output) were found in " << sourceFiles.front() << "\n";
@@ -763,7 +855,7 @@ int runSwaggerServer(const std::filesystem::path &sourcePath, ServeOptions optio
     }
 
     trx::runtime::Interpreter interpreter(module, trx::runtime::createDatabaseDriver(options.dbConfig));
-    const std::string swaggerSpec = buildSwaggerSpec(procedureNames, options.port);
+    const std::string swaggerSpec = buildSwaggerSpec(procedureLookup, records, options.port);
     const std::string swaggerIndex = buildSwaggerIndexPage();
     const std::string proceduresPayload = buildProceduresPayload(procedureNames, defaultProcedure);
 
@@ -832,10 +924,15 @@ int runSwaggerServer(const std::filesystem::path &sourcePath, ServeOptions optio
             response.status = 200;
             response.contentType = "application/json";
             response.body = proceduresPayload;
-        } else if (request.path == "/execute") {
-            response = handleExecute(request, procedureLookup, defaultProcedure, interpreter);
         } else {
-            response = makeErrorResponse(404, "Route not found");
+            // Check if path matches a procedure
+            std::string procName = request.path.substr(1); // remove leading /
+            const auto procIt = procedureLookup.find(procName);
+            if (procIt != procedureLookup.end()) {
+                response = handleExecuteProcedure(request, procIt->second, interpreter);
+            } else {
+                response = makeErrorResponse(404, "Route not found");
+            }
         }
 
         sendHttpResponse(clientFd, response);
