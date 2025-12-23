@@ -1,5 +1,5 @@
 INCLUDE init.trx;
-include json_test.trx;
+INCLUDE json_test.trx;
 
 CONSTANT PI 3.14159;
 CONSTANT APP_NAME "TRX Interpreter";
@@ -9,32 +9,22 @@ TYPE ADDRESS {
     ZIP INTEGER;
 }
 
-TYPE PERSON {
-    ID INTEGER;
-    NAME CHAR(64);
-    AGE INTEGER;
-    ACTIVE BOOLEAN;
-    SALARY DECIMAL(10,2);
-}
-
 TYPE EMPLOYEE {
+    ID INTEGER;
     DEPARTMENT CHAR(32);
 }
 
-TYPE EMPLOYEES {
-    employees list(EMPLOYEE);
-}
 
 PROCEDURE inner() {
     trace('Hello world');
 }
 
+TYPE PERSON FROM TABLE person;
+
 FUNCTION process_employee(PERSON) : PERSON {
     output := input;
 
-    var employees EMPLOYEES;
-
-    IF input.ACTIVE THEN {
+    IF input.ACTIVE {
         output.SALARY := input.SALARY * 1.1;
     } ELSE {
         output.SALARY := 0;
@@ -42,19 +32,18 @@ FUNCTION process_employee(PERSON) : PERSON {
 
     inner();
 
-    exec sql declare c1 cursor for select name from employee;
+    exec sql declare c1 cursor for select person_id, department from employee where person_id = input.id;
     exec sql open c1;
-        var employee EMPLOYEE;
-        exec sql fetch c1 into :employee;
+        var employee from table employee;
+        exec sql fetch c1 into :employee.person_id, :employee.department;
+
     exec sql close c1;
     
-    trace("Emnloyees: "+employees);
-
     WHILE output.SALARY < 50000 {
         output.SALARY := output.SALARY + 1000;
     }
 
-    IF input.ACTIVE THEN {
+    IF input.ACTIVE {
         output.SALARY := output.SALARY * 1.15;
     }
 }

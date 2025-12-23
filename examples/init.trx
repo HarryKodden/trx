@@ -1,21 +1,24 @@
+TYPE PERSON FROM TABLE person;
+
+TYPE EMPLOYEE {
+    ID integer;
+    DEPARTMENT CHAR(32);
+}
+
+TYPE EMPLOYEES {
+    employees list(EMPLOYEE);
+}
+
 PROCEDURE init_database() {
-    EXEC SQL CREATE TABLE IF NOT EXISTS address (
-        street VARCHAR(64),
-        zip INTEGER
-    );
+    EXEC SQL CREATE TABLE IF NOT EXISTS address (street TEXT, zip INTEGER);
 
-    EXEC SQL CREATE TABLE IF NOT EXISTS person (
-        id INTEGER PRIMARY KEY,
-        name VARCHAR(64),
-        age INTEGER,
-        active BOOLEAN,
-        salary DECIMAL(10,2)
-    );
+    EXEC SQL CREATE TABLE IF NOT EXISTS person (id INTEGER PRIMARY KEY, name TEXT, age INTEGER, active INTEGER, salary NUMERIC);
 
-    EXEC SQL CREATE TABLE IF NOT EXISTS employee (
-        person_id INTEGER PRIMARY KEY REFERENCES person(id),
-        department VARCHAR(32)
-    );
+    EXEC SQL CREATE TABLE IF NOT EXISTS employee (person_id INTEGER PRIMARY KEY, department TEXT);
+
+    EXEC SQL INSERT INTO employee (person_id, department) VALUES (1, 'Engineering');
+    EXEC SQL INSERT INTO employee (person_id, department) VALUES (2, 'Sales');
+    EXEC SQL INSERT INTO employee (person_id, department) VALUES (3, 'Engineering');
 
     trace("Database tables initialized successfully");
 }

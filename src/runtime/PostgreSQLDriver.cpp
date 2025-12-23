@@ -25,13 +25,18 @@ PostgreSQLDriver::PostgreSQLDriver(const DatabaseConfig& config)
     : config_(config), conn_(nullptr) {}
 
 PostgreSQLDriver::~PostgreSQLDriver() {
-    // Clean up cursors
-    for (auto& [name, res] : cursors_) {
-        if (res) {
-            PQclear(res);
+    // Clean up cursors - close any open cursors
+    for (auto& [name, declared] : cursors_) {
+        if (declared) {
+            try {
+                executeSql("CLOSE " + name);
+            } catch (...) {
+                // Ignore errors during cleanup
+            }
         }
     }
     cursors_.clear();
+    currentRows_.clear();
 
     if (conn_) {
         PQfinish(conn_);
@@ -153,67 +158,61 @@ std::vector<std::vector<SqlValue>> PostgreSQLDriver::querySql(const std::string&
 }
 
 void PostgreSQLDriver::openCursor(const std::string& name, const std::string& sql, const std::vector<SqlParameter>& params) {
-    // For simplicity, execute the query and store the result
-    auto results = querySql(sql, params);
-    // Store as a fake cursor, but since we have all results, simulate
-    // In real implementation, use DECLARE CURSOR
-    // For now, store the results in a way
-    // But since cursors_ is PGresult*, and we have vector, perhaps store the vector somehow
-    // For simplicity, since the interface expects PGresult*, but we can't store vector in PGresult*
-    // Perhaps change the interface, but for now, execute and store empty PGresult or something
-    // Actually, for cursors, PostgreSQL uses DECLARE name CURSOR FOR sql; then FETCH
+    closeCursor(name); // Close if already exists
+
     std::string declareSql = "DECLARE " + name + " CURSOR FOR " + sql;
     executeSql(declareSql, params);
-    // Then fetch all at once for simplicity
-    std::string fetchSql = "FETCH ALL FROM " + name;
-    PGresult* res = PQexec(conn_, fetchSql.c_str());
-    checkPGresult(res, conn_, "openCursor");
-    cursors_[name] = res;
+    cursors_[name] = true;
 }
 
 bool PostgreSQLDriver::cursorNext(const std::string& name) {
     auto it = cursors_.find(name);
-    if (it == cursors_.end()) {
+    if (it == cursors_.end() || !it->second) {
         throw std::runtime_error("Cursor not found: " + name);
     }
-    PGresult* res = it->second;
-    static int currentRow = 0; // Hack, should be per cursor
-    int nrows = PQntuples(res);
-    if (currentRow < nrows) {
-        ++currentRow;
-        return true;
-    }
-    return false;
-}
 
-std::vector<SqlValue> PostgreSQLDriver::cursorGetRow(const std::string& name) {
-    auto it = cursors_.find(name);
-    if (it == cursors_.end()) {
-        throw std::runtime_error("Cursor not found: " + name);
-    }
-    PGresult* res = it->second;
-    static int currentRow = 0; // Hack
-    int ncols = PQnfields(res);
-    std::vector<SqlValue> row;
-    for (int j = 0; j < ncols; ++j) {
-        if (PQgetisnull(res, currentRow - 1, j)) {
-            row.emplace_back(SqlValue(nullptr));
-        } else {
-            std::string val = PQgetvalue(res, currentRow - 1, j);
-            // Parse as before
-            if (val == "t" || val == "f") {
-                row.emplace_back(SqlValue(val == "t"));
+    std::string fetchSql = "FETCH NEXT FROM " + name;
+    PGresult* res = PQexec(conn_, fetchSql.c_str());
+    checkPGresult(res, conn_, "cursorNext");
+
+    int nrows = PQntuples(res);
+    if (nrows > 0) {
+        // Extract the row
+        int ncols = PQnfields(res);
+        std::vector<SqlValue> row;
+        for (int j = 0; j < ncols; ++j) {
+            if (PQgetisnull(res, 0, j)) {
+                row.emplace_back(SqlValue(nullptr));
             } else {
-                try {
-                    double num = std::stod(val);
-                    row.emplace_back(SqlValue(num));
-                } catch (...) {
-                    row.emplace_back(SqlValue(val));
+                std::string val = PQgetvalue(res, 0, j);
+                // Parse value
+                if (val == "t" || val == "f") {
+                    row.emplace_back(SqlValue(val == "t"));
+                } else {
+                    try {
+                        double num = std::stod(val);
+                        row.emplace_back(SqlValue(num));
+                    } catch (...) {
+                        row.emplace_back(SqlValue(val));
+                    }
                 }
             }
         }
+        currentRows_[name] = std::move(row);
+        PQclear(res);
+        return true;
+    } else {
+        PQclear(res);
+        return false;
     }
-    return row;
+}
+
+std::vector<SqlValue> PostgreSQLDriver::cursorGetRow(const std::string& name) {
+    auto it = currentRows_.find(name);
+    if (it == currentRows_.end()) {
+        throw std::runtime_error("No current row for cursor: " + name);
+    }
+    return it->second;
 }
 
 void PostgreSQLDriver::closeCursor(const std::string& name) {
@@ -221,8 +220,8 @@ void PostgreSQLDriver::closeCursor(const std::string& name) {
     if (it != cursors_.end()) {
         std::string closeSql = "CLOSE " + name;
         executeSql(closeSql, {});
-        PQclear(it->second);
         cursors_.erase(it);
+        currentRows_.erase(name);
     }
 }
 
@@ -277,6 +276,57 @@ void PostgreSQLDriver::commitTransaction() {
 
 void PostgreSQLDriver::rollbackTransaction() {
     executeSql("ROLLBACK", {});
+}
+
+std::vector<TableColumn> PostgreSQLDriver::getTableSchema(const std::string& tableName) {
+    // Query information_schema for column details
+    std::string sql = R"(
+        SELECT column_name, data_type, character_maximum_length, numeric_precision, numeric_scale, 
+               is_nullable, column_default
+        FROM information_schema.columns 
+        WHERE table_name = $1 
+        ORDER BY ordinal_position
+    )";
+    
+    auto results = querySql(sql, {{"", tableName}});
+    
+    std::vector<TableColumn> columns;
+    for (const auto& row : results) {
+        if (row.size() >= 7) {
+            TableColumn col;
+            col.name = row[0].asString(); // column_name
+            std::string dataType = row[1].asString(); // data_type
+            
+            // Map PostgreSQL types to TRX types
+            if (dataType == "integer" || dataType == "bigint" || dataType == "smallint") {
+                col.typeName = "INTEGER";
+            } else if (dataType == "character varying" || dataType == "text" || dataType == "character") {
+                col.typeName = "CHAR";
+                if (!row[2].isNull()) {
+                    col.length = static_cast<long>(row[2].asNumber()); // character_maximum_length
+                }
+            } else if (dataType == "numeric" || dataType == "decimal" || dataType == "real" || dataType == "double precision") {
+                col.typeName = "DECIMAL";
+                if (!row[3].isNull()) {
+                    col.length = static_cast<long>(row[3].asNumber()); // numeric_precision
+                }
+                if (!row[4].isNull()) {
+                    col.scale = static_cast<short>(row[4].asNumber()); // numeric_scale
+                }
+            } else if (dataType == "boolean") {
+                col.typeName = "BOOLEAN";
+            } else {
+                col.typeName = "CHAR"; // Default
+            }
+            
+            col.isNullable = row[5].asString() == "YES"; // is_nullable
+            col.defaultValue = row[6].isNull() ? std::optional<std::string>{} : std::optional<std::string>{row[6].asString()}; // column_default
+            
+            columns.push_back(col);
+        }
+    }
+    
+    return columns;
 }
 
 } // namespace trx::runtime

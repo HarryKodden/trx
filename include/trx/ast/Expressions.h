@@ -87,14 +87,11 @@ struct MethodCallExpression {
 
 enum class BuiltinValue {
     SqlCode,
-    TrxDbms,
-    TrxTime,
-    TrxCode,
     Date,
-    Stamp,
     Time,
     Week,
-    WeekDay
+    WeekDay,
+    TimeStamp
 };
 
 struct BuiltinExpression {

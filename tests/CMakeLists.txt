@@ -124,3 +124,33 @@ add_test(
   NAME SwitchStatementTest
   COMMAND trx_switch_statement_test
 )
+
+add_executable(trx_cursor_test
+  runtime/TestUtils.h
+  runtime/CursorTest.cpp
+)
+
+target_link_libraries(trx_cursor_test
+  PRIVATE
+    trx_core
+)
+
+add_test(
+  NAME CursorTest
+  COMMAND trx_cursor_test
+)
+
+add_executable(trx_builtin_test
+  runtime/TestUtils.h
+  runtime/BuiltinTest.cpp
+)
+
+target_link_libraries(trx_builtin_test
+  PRIVATE
+    trx_core
+)
+
+add_test(
+  NAME BuiltinTest
+  COMMAND trx_builtin_test
+)

@@ -25,6 +25,7 @@ public:
     std::vector<SqlValue> cursorGetRow(const std::string& name) override;
     void closeCursor(const std::string& name) override;
     void createOrMigrateTable(const std::string& tableName, const std::vector<TableColumn>& columns) override;
+    std::vector<TableColumn> getTableSchema(const std::string& tableName) override;
     void beginTransaction() override;
     void commitTransaction() override;
     void rollbackTransaction() override;

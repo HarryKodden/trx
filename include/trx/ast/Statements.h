@@ -48,6 +48,7 @@ struct VariableDeclarationStatement {
     Identifier name;
     std::string typeName;
     std::optional<ExpressionPtr> initializer;
+    std::optional<std::string> tableName; // If set, type will be inferred from database table schema
 };
 
 struct BatchStatement {

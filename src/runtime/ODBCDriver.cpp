@@ -12,6 +12,9 @@ namespace {
 
 // Helper function to check ODBC return codes
 void checkODBC(SQLRETURN ret, [[maybe_unused]] SQLHANDLE handle, [[maybe_unused]] SQLSMALLINT type, const std::string& operation) {
+
+    std::cout << "ODBC: " << ret << std::endl;
+    
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
         std::stringstream ss;
         ss << "ODBC " << operation << " failed: SQL code " << ret;
@@ -360,6 +363,114 @@ void ODBCDriver::rollbackTransaction() {
     checkODBC(ret, connection_, SQL_HANDLE_DBC, "SQLEndTran");
     ret = SQLSetConnectAttr(connection_, SQL_ATTR_AUTOCOMMIT, reinterpret_cast<SQLPOINTER>(SQL_AUTOCOMMIT_ON), 0);
     checkODBC(ret, connection_, SQL_HANDLE_DBC, "SQLSetConnectAttr");
+}
+
+std::vector<TableColumn> ODBCDriver::getTableSchema(const std::string& tableName) {
+    SQLHSTMT stmt;
+    SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, connection_, &stmt);
+    checkODBC(ret, connection_, SQL_HANDLE_DBC, "SQLAllocHandle(STMT)");
+
+    std::vector<TableColumn> columns;
+
+    try {
+        // Call SQLColumns to get column information
+        // SQLColumns(hstmt, CatalogName, NameLength1, SchemaName, NameLength2, TableName, NameLength3, ColumnName, NameLength4)
+        ret = SQLColumns(stmt,
+                        nullptr, 0,  // Catalog name (nullptr for all catalogs)
+                        nullptr, 0,  // Schema name (nullptr for all schemas)
+                        reinterpret_cast<SQLCHAR*>(const_cast<char*>(tableName.c_str())), SQL_NTS,  // Table name
+                        nullptr, 0); // Column name (nullptr for all columns)
+        checkODBC(ret, stmt, SQL_HANDLE_STMT, "SQLColumns");
+
+        // Bind result columns
+        SQLCHAR columnName[256];
+        SQLCHAR dataTypeStr[256];
+        SQLLEN dataType;
+        SQLLEN columnSize;
+        SQLLEN decimalDigits;
+        SQLLEN nullable;
+
+        ret = SQLBindCol(stmt, 4, SQL_C_CHAR, columnName, sizeof(columnName), nullptr); // COLUMN_NAME
+        checkODBC(ret, stmt, SQL_HANDLE_STMT, "SQLBindCol(COLUMN_NAME)");
+
+        ret = SQLBindCol(stmt, 5, SQL_C_SLONG, &dataType, 0, nullptr); // DATA_TYPE
+        checkODBC(ret, stmt, SQL_HANDLE_STMT, "SQLBindCol(DATA_TYPE)");
+
+        ret = SQLBindCol(stmt, 7, SQL_C_CHAR, dataTypeStr, sizeof(dataTypeStr), nullptr); // TYPE_NAME
+        checkODBC(ret, stmt, SQL_HANDLE_STMT, "SQLBindCol(TYPE_NAME)");
+
+        ret = SQLBindCol(stmt, 8, SQL_C_SLONG, &columnSize, 0, nullptr); // COLUMN_SIZE
+        checkODBC(ret, stmt, SQL_HANDLE_STMT, "SQLBindCol(COLUMN_SIZE)");
+
+        ret = SQLBindCol(stmt, 9, SQL_C_SLONG, &decimalDigits, 0, nullptr); // DECIMAL_DIGITS
+        checkODBC(ret, stmt, SQL_HANDLE_STMT, "SQLBindCol(DECIMAL_DIGITS)");
+
+        ret = SQLBindCol(stmt, 11, SQL_C_SLONG, &nullable, 0, nullptr); // NULLABLE
+        checkODBC(ret, stmt, SQL_HANDLE_STMT, "SQLBindCol(NULLABLE)");
+
+        // Fetch rows
+        while ((ret = SQLFetch(stmt)) == SQL_SUCCESS || ret == SQL_SUCCESS_WITH_INFO) {
+            TableColumn col;
+            col.name = reinterpret_cast<char*>(columnName);
+
+            // Map ODBC SQL data types to TRX types
+            switch (dataType) {
+                case SQL_INTEGER:
+                case SQL_SMALLINT:
+                case SQL_TINYINT:
+                case SQL_BIGINT:
+                    col.typeName = "INTEGER";
+                    break;
+                case SQL_CHAR:
+                case SQL_VARCHAR:
+                case SQL_LONGVARCHAR:
+                case SQL_WCHAR:
+                case SQL_WVARCHAR:
+                case SQL_WLONGVARCHAR:
+                    col.typeName = "CHAR";
+                    if (columnSize != SQL_NO_TOTAL && columnSize > 0) {
+                        col.length = static_cast<long>(columnSize);
+                    }
+                    break;
+                case SQL_DECIMAL:
+                case SQL_NUMERIC:
+                case SQL_FLOAT:
+                case SQL_REAL:
+                case SQL_DOUBLE:
+                    col.typeName = "DECIMAL";
+                    if (columnSize != SQL_NO_TOTAL && columnSize > 0) {
+                        col.length = static_cast<long>(columnSize);
+                    }
+                    if (decimalDigits != SQL_NO_TOTAL && decimalDigits >= 0) {
+                        col.scale = static_cast<short>(decimalDigits);
+                    }
+                    break;
+                case SQL_BIT:
+                    col.typeName = "BOOLEAN";
+                    break;
+                default:
+                    col.typeName = "CHAR"; // Default fallback
+                    break;
+            }
+
+            col.isNullable = (nullable == SQL_NULLABLE);
+            // Note: Primary key information would require a separate query using SQLPrimaryKeys
+            // For now, we'll leave isPrimaryKey as false
+
+            columns.push_back(col);
+        }
+
+        if (ret != SQL_NO_DATA) {
+            checkODBC(ret, stmt, SQL_HANDLE_STMT, "SQLFetch");
+        }
+
+    } catch (...) {
+        SQLFreeHandle(SQL_HANDLE_STMT, stmt);
+        throw;
+    }
+
+    SQLFreeHandle(SQL_HANDLE_STMT, stmt);
+    return columns;
 }
 
 } // namespace trx::runtime

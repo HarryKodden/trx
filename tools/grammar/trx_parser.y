@@ -408,14 +408,15 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 
 %token <text> IDENT STRING PATH SQL_TEXT SQL_VARIABLE
 %token <number> NUMBER
-%token INCLUDE CONSTANT FUNCTION PROCEDURE TABLE PRIMARY KEY NULL_K TYPE VAR LIST
-%token IF THEN ELSE WHILE SWITCH CASE DEFAULT CALL TRY CATCH THROW RETURN
+%token INCLUDE CONSTANT FUNCTION PROCEDURE TABLE PRIMARY KEY NULL_K TYPE FROM VAR LIST
+%token IF ELSE WHILE SWITCH CASE DEFAULT CALL TRY CATCH THROW RETURN
 %token EXEC_SQL
 %token ASSIGN
 %token AND OR NOT TRUE FALSE
 %token LE GE NEQ NEQ2 DOT
 %token _CHAR _INTEGER _SMALLINT _DECIMAL _BOOLEAN _FILE _BLOB
 %token DATE TIME JSON
+%token SQLCODE TIMESTAMP WEEK WEEKDAY
 %token LBRACE RBRACE LBRACKET RBRACKET LPAREN RPAREN COMMA SEMICOLON
 
 %type <text> identifier
@@ -427,7 +428,7 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 %type <ptr> procedure_body block statement_list statement assignment_statement variable_declaration_statement throw_statement return_statement try_catch_statement if_statement else_clause while_statement switch_statement case_clauses case_clause default_clause sql_statement expression_statement arguments sql_chunks sql_chunk
 %type <ptr> format_decl
 %type <ptr> variable expression variable_reference
-%type <ptr> logical_or_expression logical_and_expression equality_expression relational_expression additive_expression multiplicative_expression unary_expression primary_expression literal object_properties array_elements
+%type <ptr> logical_or_expression logical_and_expression equality_expression relational_expression additive_expression multiplicative_expression unary_expression primary_expression builtin literal object_properties array_elements
 %type <number> dimension
 
 %left OR
@@ -454,18 +455,17 @@ definitions
 definition
     : include_decl
     | constant_decl
-    | variable_declaration_statement
-      {
-          auto stmt = statementFrom($1);
-          if (stmt && std::holds_alternative<trx::ast::VariableDeclarationStatement>(stmt->node)) {
-              driver.context().addVariableDeclarationStatement(std::get<trx::ast::VariableDeclarationStatement>(std::move(stmt->node)));
-          }
-          delete stmt;
-      }
-    | expression_statement
     | type_decl
     | function_decl
     | procedure_decl
+    | statement
+      {
+          auto stmt = statementFrom($1);
+          if (stmt) {
+              driver.context().addStatement(std::move(*stmt));
+          }
+          delete stmt;
+      }
     ;
 
 include_decl
@@ -523,6 +523,16 @@ type_decl
 
           driver.context().addRecord(std::move(record));
           std::free($2);
+      }
+    | TYPE identifier FROM TABLE identifier SEMICOLON
+      {
+          trx::ast::RecordDecl record;
+          record.name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)};
+          record.tableName = $5 ? std::string($5) : std::string{};
+
+          driver.context().addRecord(std::move(record));
+          std::free($2);
+          std::free($5);
       }
     ;
 
@@ -898,7 +908,8 @@ variable_declaration_statement
           stmt->node = trx::ast::VariableDeclarationStatement{
               .name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)},
               .typeName = std::string{},
-              .initializer = std::nullopt
+              .initializer = std::nullopt,
+              .tableName = std::nullopt
           };
           std::free($2);
           $$ = stmt;
@@ -910,7 +921,8 @@ variable_declaration_statement
           stmt->node = trx::ast::VariableDeclarationStatement{
               .name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)},
               .typeName = $3 ? std::string($3) : std::string{},
-              .initializer = std::nullopt
+              .initializer = std::nullopt,
+              .tableName = std::nullopt
           };
           std::free($2);
           std::free($3);
@@ -924,13 +936,14 @@ variable_declaration_statement
           stmt->node = trx::ast::VariableDeclarationStatement{
               .name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)},
               .typeName = std::string{},
-              .initializer = std::move(*value)
+              .initializer = std::move(*value),
+              .tableName = std::nullopt
           };
           delete value;
           std::free($2);
           $$ = stmt;
       }
-    | VAR identifier identifier ASSIGN expression SEMICOLON
+    | VAR identifier type_name ASSIGN expression SEMICOLON
       {
           auto stmt = new trx::ast::Statement();
           stmt->location = makeLocation(driver, @1);
@@ -938,14 +951,28 @@ variable_declaration_statement
           stmt->node = trx::ast::VariableDeclarationStatement{
               .name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)},
               .typeName = $3 ? std::string($3) : std::string{},
-              .initializer = std::move(*value)
+              .initializer = std::move(*value),
+              .tableName = std::nullopt
           };
           delete value;
           std::free($2);
           std::free($3);
           $$ = stmt;
       }
-    ;
+    | VAR identifier FROM TABLE identifier SEMICOLON
+      {
+          auto stmt = new trx::ast::Statement();
+          stmt->location = makeLocation(driver, @1);
+          stmt->node = trx::ast::VariableDeclarationStatement{
+              .name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)},
+              .typeName = std::string{},
+              .initializer = std::nullopt,
+              .tableName = $5 ? std::string($5) : std::string{}
+          };
+          std::free($2);
+          std::free($5);
+          $$ = stmt;
+      }
 
 throw_statement
     : THROW expression SEMICOLON
@@ -996,13 +1023,13 @@ try_catch_statement
     ;
 
 if_statement
-        : IF expression THEN block else_clause
+        : IF expression block else_clause
             {
                     auto stmt = new trx::ast::Statement();
                     stmt->location = makeLocation(driver, @1);
                     auto condition = expressionFrom($2);
-                    auto thenBranch = statementListFrom($4);
-                    auto elseBranch = statementListFrom($5);
+                    auto thenBranch = statementListFrom($3);
+                    auto elseBranch = statementListFrom($4);
                     trx::ast::IfStatement node;
                     node.condition = std::move(*condition);
                     node.thenBranch = std::move(*thenBranch);
@@ -1337,6 +1364,10 @@ primary_expression
             {
                     $$ = $1;
             }
+        | builtin
+            {
+                    $$ = $1;
+            }
         | variable_reference
             {
                     $$ = $1;
@@ -1391,6 +1422,33 @@ literal
         | LBRACKET array_elements RBRACKET
             {
                     $$ = $2;
+            }
+        ;
+
+builtin
+        : SQLCODE
+            {
+                    $$ = wrapExpression(trx::ast::makeBuiltin(trx::ast::BuiltinValue::SqlCode));
+            }
+        | DATE
+            {
+                    $$ = wrapExpression(trx::ast::makeBuiltin(trx::ast::BuiltinValue::Date));
+            }
+        | TIME
+            {
+                    $$ = wrapExpression(trx::ast::makeBuiltin(trx::ast::BuiltinValue::Time));
+            }
+        | WEEK
+            {
+                    $$ = wrapExpression(trx::ast::makeBuiltin(trx::ast::BuiltinValue::Week));
+            }
+        | WEEKDAY
+            {
+                    $$ = wrapExpression(trx::ast::makeBuiltin(trx::ast::BuiltinValue::WeekDay));
+            }
+        | TIMESTAMP
+            {
+                    $$ = wrapExpression(trx::ast::makeBuiltin(trx::ast::BuiltinValue::TimeStamp));
             }
         ;
 
@@ -1528,6 +1586,13 @@ type_name
           listType += $3;
           listType += ")";
           $$ = strdup(listType.c_str());
+      }
+    | _CHAR LPAREN NUMBER RPAREN
+      {
+          std::string type = "_CHAR(";
+          type += std::to_string($3);
+          type += ")";
+          $$ = strdup(type.c_str());
       }
     | _CHAR
       {

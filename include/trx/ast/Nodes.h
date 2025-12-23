@@ -56,6 +56,7 @@ struct TableColumn {
 struct RecordDecl {
     Identifier name;
     std::vector<RecordField> fields;
+    std::optional<std::string> tableName; // If set, fields will be populated from database schema
 };
 
 struct TableDecl {
@@ -80,6 +81,7 @@ using Declaration = std::variant<IncludeDecl,
 
 struct Module {
     std::vector<Declaration> declarations;
+    std::vector<Statement> statements;
 };
 
 } // namespace trx::ast

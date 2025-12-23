@@ -553,6 +553,20 @@ std::string serializeJsonValue(const trx::runtime::JsonValue &value) {
         result.push_back('"');
         return result;
     }
+    if (std::holds_alternative<trx::runtime::JsonValue::Array>(value.data)) {
+        const auto& array = std::get<trx::runtime::JsonValue::Array>(value.data);
+        std::string result{"["};
+        bool first = true;
+        for (const auto& item : array) {
+            if (!first) {
+                result.push_back(',');
+            }
+            first = false;
+            result.append(serializeJsonValue(item));
+        }
+        result.push_back(']');
+        return result;
+    }
     if (std::holds_alternative<trx::runtime::JsonValue::Object>(value.data)) {
         return serializeObject(std::get<trx::runtime::JsonValue::Object>(value.data));
     }
@@ -702,11 +716,17 @@ std::vector<const trx::ast::ProcedureDecl *> collectCallableProcedures(const trx
 }
 
 std::vector<const trx::ast::RecordDecl *> collectRecords(const trx::ast::Module &module) {
-    std::vector<const trx::ast::RecordDecl *> records;
+    std::map<std::string, const trx::ast::RecordDecl *> recordMap;
     for (const auto &decl : module.declarations) {
         if (const auto *record = std::get_if<trx::ast::RecordDecl>(&decl)) {
-            records.push_back(record);
+            // Use the last definition of each record name (later definitions override earlier ones)
+            recordMap[record->name.name] = record;
         }
+    }
+    std::vector<const trx::ast::RecordDecl *> records;
+    records.reserve(recordMap.size());
+    for (const auto &[_, record] : recordMap) {
+        records.push_back(record);
     }
     return records;
 }
@@ -809,80 +829,40 @@ int runSwaggerServer(const std::vector<std::filesystem::path> &sourcePaths, Serv
 
     std::cout << "[DEBUG] Total unique .trx files: " << allSourceFiles.size() << std::endl;
 
-    trx::parsing::ParserDriver driver;
-    
-    // Parse files, handling includes recursively
-    std::set<std::filesystem::path> parsedFiles;
-    std::vector<std::filesystem::path> toParse = allSourceFiles;
-    
-    while (!toParse.empty()) {
-        std::vector<std::filesystem::path> currentBatch = std::move(toParse);
-        toParse.clear();
-        
-        for (const auto &file : currentBatch) {
-            if (parsedFiles.find(file) != parsedFiles.end()) {
-                continue; // Already parsed
-            }
-            
-            const std::size_t baseline = driver.diagnostics().messages().size();
-            if (!driver.parseFile(file)) {
-                std::cerr << "Failed to parse " << file << "\n";
-                const auto &diagnostics = driver.diagnostics().messages();
-                for (std::size_t index = baseline; index < diagnostics.size(); ++index) {
-                    const auto &diag = diagnostics[index];
-                    std::cerr << "  - ";
-                    if (!diag.location.file.empty()) {
-                        std::cerr << diag.location.file;
-                        if (diag.location.line != 0) {
-                            std::cerr << ':' << diag.location.line;
-                            if (diag.location.column != 0) {
-                                std::cerr << ':' << diag.location.column;
-                            }
+    // Parse all files with separate drivers to avoid context conflicts
+    std::vector<trx::ast::Module> modules;
+    for (const auto &file : allSourceFiles) {
+        trx::parsing::ParserDriver driver;
+        if (!driver.parseFile(file)) {
+            std::cerr << "Failed to parse " << file << "\n";
+            const auto &diagnostics = driver.diagnostics().messages();
+            for (const auto &diag : diagnostics) {
+                std::cerr << "  - ";
+                if (!diag.location.file.empty()) {
+                    std::cerr << diag.location.file;
+                    if (diag.location.line != 0) {
+                        std::cerr << ':' << diag.location.line;
+                        if (diag.location.column != 0) {
+                            std::cerr << ':' << diag.location.column;
                         }
-                        std::cerr << ' ';
                     }
-                    std::cerr << diag.message << "\n";
+                    std::cerr << ' ';
                 }
-                return 1;
+                std::cerr << diag.message << "\n";
             }
-            
-            parsedFiles.insert(file);
+            return 1;
         }
-        
-        // Check for includes in the current module and add them to toParse
-        const auto &module = driver.context().module();
-        for (const auto &decl : module.declarations) {
-            if (std::holds_alternative<trx::ast::IncludeDecl>(decl)) {
-                const auto &includeDecl = std::get<trx::ast::IncludeDecl>(decl);
-                std::filesystem::path includePath = std::filesystem::path(includeDecl.file.name);
-                
-                // If the include path is relative, resolve it relative to the directory of the file that contained the include
-                if (includePath.is_relative()) {
-                    // The include location gives us the file that contained the include
-                    std::filesystem::path baseDir = std::filesystem::path(includeDecl.file.location.file).parent_path();
-                    if (baseDir.empty()) {
-                        // If no directory in the file path, resolve relative to current working directory
-                        baseDir = ".";
-                    }
-                    includePath = baseDir / includePath;
-                }
-                
-                if (parsedFiles.find(includePath) == parsedFiles.end()) {
-                    std::error_code fsError;
-                    if (std::filesystem::exists(includePath, fsError) && std::filesystem::is_regular_file(includePath, fsError)) {
-                        toParse.push_back(includePath);
-                        std::cout << "[DEBUG] Found include: " << includePath << std::endl;
-                    } else {
-                        std::cerr << "Warning: Included file not found: " << includePath << std::endl;
-                    }
-                }
-            }
-        }
+        modules.push_back(driver.context().module());
     }
 
-    const auto &module = driver.context().module();
-    const auto callableProcedures = collectCallableProcedures(module);
-    const auto records = collectRecords(module);
+    // Merge modules
+    trx::ast::Module combinedModule;
+    for (const auto &module : modules) {
+        combinedModule.declarations.insert(combinedModule.declarations.end(), module.declarations.begin(), module.declarations.end());
+    }
+
+    const auto callableProcedures = collectCallableProcedures(combinedModule);
+    const auto records = collectRecords(combinedModule);
     if (callableProcedures.empty()) {
         if (allSourceFiles.size() == 1) {
             std::cerr << "No callable procedures (with matching input/output) were found in " << allSourceFiles.front() << "\n";
@@ -912,7 +892,7 @@ int runSwaggerServer(const std::vector<std::filesystem::path> &sourcePaths, Serv
         defaultProcedure = *options.procedure;
     }
 
-    trx::runtime::Interpreter interpreter(module, trx::runtime::createDatabaseDriver(options.dbConfig));
+    trx::runtime::Interpreter interpreter(combinedModule, trx::runtime::createDatabaseDriver(options.dbConfig));
     const std::string swaggerSpec = buildSwaggerSpec(procedureLookup, records, options.port);
     const std::string swaggerIndex = buildSwaggerIndexPage();
     const std::string proceduresPayload = buildProceduresPayload(procedureNames, defaultProcedure);

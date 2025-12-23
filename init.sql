@@ -9,8 +9,19 @@ CREATE TABLE IF NOT EXISTS person (
     salary DECIMAL(10,2)
 );
 
--- Insert some sample data
 INSERT INTO person (id, name, age, active, salary) VALUES
-(1, 'John Doe', 30, true, 50000.00),
-(2, 'Jane Smith', 25, false, 45000.00),
-(3, 'Bob Johnson', 35, true, 60000.00);
+(1, 'Alice', 30, true, 70000.00),
+(2, 'Bob', 25, true, 50000.00),
+(3, 'Charlie', 35, false, 60000.00);
+
+-- Create the EMPLOYEE table
+CREATE TABLE IF NOT EXISTS employee (
+    person_id INTEGER PRIMARY KEY REFERENCES person(id),
+    department VARCHAR(32)
+);
+
+-- Insert some sample employee data
+INSERT INTO employee (person_id, department) VALUES
+(1, 'Engineering'),
+(2, 'Marketing'),
+(3, 'Sales');

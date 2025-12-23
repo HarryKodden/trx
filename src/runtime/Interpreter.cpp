@@ -249,9 +249,9 @@ JsonValue evaluateFunctionCall(const trx::ast::FunctionCallExpression &call, Exe
     // For user-defined procedures
     const auto *proc = context.interpreter.getProcedure(call.functionName);
     if (proc) {
-        if (!proc->output) {
-            throw std::runtime_error("Procedure calls cannot be used in expressions");
-        }
+        // if (!proc->output) {
+        //     throw std::runtime_error("Procedure calls cannot be used in expressions");
+        // }
         bool hasInput = proc->input.has_value();
         if (hasInput) {
             if (call.arguments.size() != 1) throw std::runtime_error("Function call expects 1 argument");
@@ -292,17 +292,7 @@ JsonValue evaluateBuiltin(const trx::ast::BuiltinExpression &builtin, ExecutionC
     (void)context;
     switch (builtin.value) {
         case trx::ast::BuiltinValue::SqlCode:
-            // Placeholder for SQL error code
-            return JsonValue(0.0);
-        case trx::ast::BuiltinValue::TrxDbms:
-            return JsonValue("TRX");
-        case trx::ast::BuiltinValue::TrxTime: {
-            auto now = std::chrono::system_clock::now();
-            auto time = std::chrono::system_clock::to_time_t(now);
-            return JsonValue(std::ctime(&time));
-        }
-        case trx::ast::BuiltinValue::TrxCode:
-            return JsonValue("TRX");
+            return JsonValue(context.interpreter.getSqlCode());
         case trx::ast::BuiltinValue::Date: {
             auto now = std::chrono::system_clock::now();
             auto time = std::chrono::system_clock::to_time_t(now);
@@ -310,11 +300,6 @@ JsonValue evaluateBuiltin(const trx::ast::BuiltinExpression &builtin, ExecutionC
             char buf[11];
             std::strftime(buf, sizeof(buf), "%Y-%m-%d", tm);
             return JsonValue(buf);
-        }
-        case trx::ast::BuiltinValue::Stamp: {
-            auto now = std::chrono::system_clock::now();
-            auto time = std::chrono::system_clock::to_time_t(now);
-            return JsonValue(static_cast<double>(time));
         }
         case trx::ast::BuiltinValue::Time: {
             auto now = std::chrono::system_clock::now();
@@ -335,6 +320,11 @@ JsonValue evaluateBuiltin(const trx::ast::BuiltinExpression &builtin, ExecutionC
             auto time = std::chrono::system_clock::to_time_t(now);
             std::tm *tm = std::localtime(&time);
             return JsonValue(static_cast<double>(tm->tm_wday + 1)); // 1-7
+        }
+        case trx::ast::BuiltinValue::TimeStamp: {
+            auto now = std::chrono::system_clock::now();
+            auto time = std::chrono::system_clock::to_time_t(now);
+            return JsonValue(static_cast<double>(time));
         }
     }
     throw std::runtime_error("Unknown builtin");
@@ -537,18 +527,41 @@ JsonValue &resolveVariableTarget(const trx::ast::VariableExpression &variable, E
 }
 
 void executeAssignment(const trx::ast::AssignmentStatement &assignment, ExecutionContext &context) {
+    std::cout << "ASSIGNMENT: evaluating value for assignment" << std::endl;
     JsonValue value = evaluateExpression(assignment.value, context);
+    std::cout << "ASSIGNMENT: value evaluated to " << value << std::endl;
+    std::cout << "ASSIGNMENT: resolving target" << std::endl;
     JsonValue &target = resolveVariableTarget(assignment.target, context);
+    std::cout << "ASSIGNMENT: target resolved, assigning" << std::endl;
     target = std::move(value);
+    std::cout << "ASSIGNMENT: assignment complete" << std::endl;
 }
 
 void executeVariableDeclaration(const trx::ast::VariableDeclarationStatement &varDecl, ExecutionContext &context) {
     JsonValue initialValue = JsonValue(nullptr);
     if (varDecl.initializer) {
         initialValue = evaluateExpression(*varDecl.initializer, context);
-    } else if (!varDecl.typeName.empty() && varDecl.typeName.substr(0, 5) == "LIST(") {
-        // Initialize list variables as empty arrays
-        initialValue = JsonValue(JsonValue::Array{});
+    } else if (!varDecl.typeName.empty()) {
+        if (varDecl.typeName.substr(0, 5) == "LIST(") {
+            // Initialize list variables as empty arrays
+            initialValue = JsonValue(JsonValue::Array{});
+        } else if (varDecl.typeName.substr(0, 5) == "CHAR(") {
+            // Initialize CHAR(n) variables as strings of n spaces
+            size_t start = varDecl.typeName.find('(');
+            size_t end = varDecl.typeName.find(')');
+            if (start != std::string::npos && end != std::string::npos && end > start + 1) {
+                std::string lenStr = varDecl.typeName.substr(start + 1, end - start - 1);
+                try {
+                    int len = std::stoi(lenStr);
+                    initialValue = JsonValue(std::string(len, ' '));
+                } catch (const std::exception&) {
+                    // If parsing fails, leave as nullptr
+                }
+            }
+        } else if (context.interpreter.getRecord(varDecl.typeName)) {
+            // Initialize record variables as empty objects
+            initialValue = JsonValue(JsonValue::Object{});
+        }
     }
     if (context.isGlobal) {
         context.interpreter.globalVariables()[varDecl.name.name] = initialValue;
@@ -783,8 +796,14 @@ void executeSql(const trx::ast::SqlStatement &sqlStmt, ExecutionContext &context
 
             // Execute using database driver
             auto params = convertHostVarsToParams(hostVars);
-            context.interpreter.db().executeSql(sql, params);
-            std::cout << "SQL EXEC: " << sqlStmt.sql << std::endl;
+            try {
+                context.interpreter.db().executeSql(sql, params);
+                context.interpreter.setSqlCode(0.0); // Success
+                std::cout << "SQL EXEC: " << sqlStmt.sql << std::endl;
+            } catch (const std::exception& e) {
+                context.interpreter.setSqlCode(-1.0); // Error
+                throw;
+            }
             break;
         }
         
@@ -793,46 +812,69 @@ void executeSql(const trx::ast::SqlStatement &sqlStmt, ExecutionContext &context
             std::unordered_map<std::string, JsonValue> hostVars;
             extractHostVariables(selectSql, context, hostVars);
 
-            context.interpreter.db().openCursor(sqlStmt.identifier, selectSql, convertHostVarsToParams(hostVars));
-            std::cout << "SQL DECLARE CURSOR: " << sqlStmt.identifier << " AS " << selectSql << std::endl;
+            try {
+                context.interpreter.db().openCursor(sqlStmt.identifier, selectSql, convertHostVarsToParams(hostVars));
+                context.interpreter.setSqlCode(0.0); // Success
+                std::cout << "SQL DECLARE CURSOR: " << sqlStmt.identifier << " AS " << selectSql << std::endl;
+            } catch (const std::exception& e) {
+                context.interpreter.setSqlCode(-1.0); // Error
+                throw;
+            }
             break;
         }
 
         case trx::ast::SqlStatementKind::OpenCursor: {
             // Cursor is already opened in declare, but we could re-open if needed
+            context.interpreter.setSqlCode(0.0); // Success (no actual operation)
             std::cout << "SQL OPEN CURSOR: " << sqlStmt.identifier << std::endl;
             break;
         }
 
         case trx::ast::SqlStatementKind::FetchCursor: {
             try {
+                std::cout << "FETCH: calling cursorNext for " << sqlStmt.identifier << std::endl;
                 if (context.interpreter.db().cursorNext(sqlStmt.identifier)) {
+                    std::cout << "FETCH: cursorNext returned true, calling cursorGetRow" << std::endl;
                     auto row = context.interpreter.db().cursorGetRow(sqlStmt.identifier);
+                    std::cout << "FETCH: cursorGetRow returned row with " << row.size() << " columns" << std::endl;
                     // Bind results to host variables
                     size_t i = 0;
                     for (const auto& var : sqlStmt.hostVariables) {
                         if (i < row.size()) {
+                            std::cout << "FETCH: binding column " << i << " value " << row[i] << " to variable" << std::endl;
                             resolveVariableTarget(var, context) = row[i];
+                            std::cout << "FETCH: binding complete for column " << i << std::endl;
                         }
                         ++i;
                     }
+                    context.interpreter.setSqlCode(0.0); // Success - row found
                     std::cout << "SQL FETCH CURSOR: " << sqlStmt.identifier << " - row found" << std::endl;
                 } else {
+                    std::cout << "FETCH: cursorNext returned false, no more rows" << std::endl;
+                    std::cout << "FETCH: cursorNext returned false, no more rows" << std::endl;
                     // No more rows - set host variables to null
                     for (const auto& var : sqlStmt.hostVariables) {
                         resolveVariableTarget(var, context) = JsonValue(nullptr);
                     }
+                    context.interpreter.setSqlCode(100.0); // No data found
                     std::cout << "SQL FETCH CURSOR: " << sqlStmt.identifier << " - no more rows" << std::endl;
                 }
             } catch (const std::runtime_error& e) {
+                context.interpreter.setSqlCode(-1.0); // Error
                 throw std::runtime_error("Cursor operation failed: " + std::string(e.what()));
             }
             break;
         }
 
         case trx::ast::SqlStatementKind::CloseCursor: {
-            context.interpreter.db().closeCursor(sqlStmt.identifier);
-            std::cout << "SQL CLOSE CURSOR: " << sqlStmt.identifier << std::endl;
+            try {
+                context.interpreter.db().closeCursor(sqlStmt.identifier);
+                context.interpreter.setSqlCode(0.0); // Success
+                std::cout << "SQL CLOSE CURSOR: " << sqlStmt.identifier << std::endl;
+            } catch (const std::exception& e) {
+                context.interpreter.setSqlCode(-1.0); // Error
+                throw;
+            }
             break;
         }
 
@@ -843,20 +885,31 @@ void executeSql(const trx::ast::SqlStatement &sqlStmt, ExecutionContext &context
 
             // Execute the SELECT statement (FOR UPDATE is mainly a hint for locking in other databases)
             auto params = convertHostVarsToParams(hostVars);
-            auto results = context.interpreter.db().querySql(sql, params);
-            if (!results.empty()) {
-                // Bind first row results to host variables if specified
-                const auto& row = results[0];
-                size_t i = 0;
-                for (const auto& var : sqlStmt.hostVariables) {
-                    if (i < row.size()) {
-                        resolveVariableTarget(var, context) = row[i];
+            try {
+                auto results = context.interpreter.db().querySql(sql, params);
+                if (!results.empty()) {
+                    // Bind first row results to host variables if specified
+                    const auto& row = results[0];
+                    size_t i = 0;
+                    for (const auto& var : sqlStmt.hostVariables) {
+                        if (i < row.size()) {
+                            resolveVariableTarget(var, context) = row[i];
+                        }
+                        ++i;
                     }
-                    ++i;
+                    context.interpreter.setSqlCode(0.0); // Success
+                    std::cout << "SQL SELECT FOR UPDATE: " << sqlStmt.sql << " - row locked and fetched" << std::endl;
+                } else {
+                    // No rows found - set host variables to null
+                    for (const auto& var : sqlStmt.hostVariables) {
+                        resolveVariableTarget(var, context) = JsonValue(nullptr);
+                    }
+                    context.interpreter.setSqlCode(100.0); // No data found
+                    std::cout << "SQL SELECT FOR UPDATE: " << sqlStmt.sql << " - no rows found" << std::endl;
                 }
-                std::cout << "SQL SELECT FOR UPDATE: " << sqlStmt.sql << " - row locked and fetched" << std::endl;
-            } else {
-                std::cout << "SQL SELECT FOR UPDATE: " << sqlStmt.sql << " - no rows found" << std::endl;
+            } catch (const std::exception& e) {
+                context.interpreter.setSqlCode(-1.0); // Error
+                throw;
             }
             break;
         }
@@ -903,6 +956,9 @@ Interpreter::Interpreter(const trx::ast::Module &module, std::unique_ptr<Databas
         if (std::holds_alternative<ast::ProcedureDecl>(decl)) {
             const auto &proc = std::get<ast::ProcedureDecl>(decl);
             procedures_[proc.name.name] = &proc;
+        } else if (std::holds_alternative<ast::RecordDecl>(decl)) {
+            const auto &record = std::get<ast::RecordDecl>(decl);
+            records_[record.name.name] = &record;
         } else if (std::holds_alternative<ast::TableDecl>(decl)) {
             const auto &table = std::get<ast::TableDecl>(decl);
             
@@ -948,6 +1004,29 @@ Interpreter::Interpreter(const trx::ast::Module &module, std::unique_ptr<Databas
 
     dbDriver_->initialize();
 
+    // Resolve TYPE FROM TABLE declarations
+    for (auto &decl : const_cast<trx::ast::Module&>(module_).declarations) {
+        if (std::holds_alternative<ast::RecordDecl>(decl)) {
+            auto &record = std::get<ast::RecordDecl>(decl);
+            if (record.tableName && record.fields.empty()) {
+                // Resolve from database schema
+                auto columns = dbDriver_->getTableSchema(*record.tableName);
+                for (const auto& col : columns) {
+                    ast::RecordField field;
+                    field.name = {.name = col.name, .location = record.name.location};
+                    field.typeName = col.typeName;
+                    field.length = col.length.value_or(0);
+                    field.scale = col.scale;
+                    field.dimension = 1; // Default
+                    field.jsonName = col.name; // Use column name as JSON name
+                    field.jsonOmitEmpty = false;
+                    field.hasExplicitJsonName = false;
+                    record.fields.push_back(field);
+                }
+            }
+        }
+    }
+
     // Execute global statements (variable declarations and function calls)
     ExecutionContext globalContext{*this, {}, false, std::nullopt, true};
     for (const auto &decl : module.declarations) {
@@ -976,6 +1055,11 @@ Interpreter::~Interpreter() = default;
 const trx::ast::ProcedureDecl* Interpreter::getProcedure(const std::string &name) const {
     auto it = procedures_.find(name);
     return it != procedures_.end() ? it->second : nullptr;
+}
+
+const trx::ast::RecordDecl* Interpreter::getRecord(const std::string &name) const {
+    auto it = records_.find(name);
+    return it != records_.end() ? it->second : nullptr;
 }
 
 std::optional<JsonValue> Interpreter::execute(const std::string &procedureName, const JsonValue &input) {
@@ -1012,9 +1096,6 @@ std::optional<JsonValue> Interpreter::execute(const std::string &procedureName, 
 
     try {
         executeStatements(procedure->body, context);
-        if (procedure->output) {
-            throw std::runtime_error("Function must return a value");
-        }
         // Commit on successful completion
         if (alreadyInTransaction) {
             dbDriver_->executeSql("RELEASE SAVEPOINT " + savepointName);
@@ -1043,7 +1124,7 @@ std::optional<JsonValue> Interpreter::execute(const std::string &procedureName, 
         throw;
     }
 
-    if (procedure->output) {
+    if (procedure->output || context.variables.count("output")) {
         const auto outIt = context.variables.find("output");
         if (outIt == context.variables.end()) {
             throw std::runtime_error("Function execution did not produce output");

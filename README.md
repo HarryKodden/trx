@@ -8,13 +8,14 @@ TRX provides a comprehensive set of features for transaction processing:
 
 ### Core Language Features
 - **Strong Typing**: Record types, lists, and built-in types (INTEGER, CHAR, BOOLEAN, DECIMAL, etc.)
+- **Automatic Type Definition**: Generate record types automatically from existing database table schemas using `TYPE name FROM TABLE table_name`
 - **Variables and Constants**: Global and local variable declarations with type safety
 - **Functions and Procedures**: Modular code organization with input/output parameters
 - **Control Flow**: IF-ELSE, WHILE loops, and SWITCH statements with CASE/DEFAULT
 - **Exception Handling**: TRY-CATCH blocks and THROW statements for error management
 - **SQL Integration**: Direct SQL execution with host variables, cursors, and transaction management
 - **Built-in Functions**: String manipulation (substr), list operations (len, append), logging (debug, info, error)
-- **Modules**: INCLUDE statements for code organization across multiple files
+- **Modules**: INCLUDE statements for code organization across multiple files (allows duplicate identical type definitions)
 
 ### Runtime Features
 - **Database Connectivity**: Support for SQLite, PostgreSQL, and ODBC connections
@@ -32,6 +33,8 @@ TYPE PERSON {
     NAME CHAR(64);
     AGE INTEGER;
 }
+
+TYPE EMPLOYEE FROM TABLE employee;
 
 CONSTANT MAX_AGE 100;
 
@@ -64,8 +67,26 @@ PROCEDURE process_data() {
 }
 ```
 
+### Automatic Type Definition from Database Tables
+
+TRX supports automatic generation of record types from existing database table schemas, eliminating code duplication:
+
+```trx
+-- Define a type automatically from the 'person' table schema
+TYPE PERSON FROM TABLE person;
+
+-- The type will have fields matching the database table:
+-- - id: INTEGER (primary key)
+-- - name: CHAR(64) (from VARCHAR(64))
+-- - age: INTEGER
+-- - active: BOOLEAN
+-- - salary: DECIMAL(10,2)
+```
+
+This feature introspects the database at runtime and creates the appropriate TRX record type with correct field types, lengths, and constraints.
+
 ### Key Constructs
-- **Declarations**: TYPE, CONSTANT, VAR, FUNCTION, PROCEDURE
+- **Declarations**: TYPE (manual or from table), CONSTANT, VAR, FUNCTION, PROCEDURE
 - **Statements**: Assignment (:=), SQL execution, control flow, calls
 - **Expressions**: Arithmetic, comparison, logical, function calls, field access
 - **SQL**: EXEC_SQL, cursors (DECLARE, OPEN, FETCH, CLOSE), host variables (:var)
@@ -186,6 +207,8 @@ docker run --rm -v "$PWD":/workspace -p 8080:8080 trx-runtime serve /workspace/e
 See the `examples/` directory for sample TRX programs:
 
 - `sample.trx`: Basic record processing and SQL operations
+- `init.trx`: Database initialization and automatic type definition from tables
+- `cursor_example.trx`: Cursor operations for reading multiple records into JSON output
 - `exception_test.trx`: Error handling examples
 - `global_test.trx`: Global variables and functions
 - `test_function.trx`: Function definitions and calls

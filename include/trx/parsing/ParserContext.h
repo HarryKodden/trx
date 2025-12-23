@@ -29,6 +29,7 @@ public:
     void addExternalProcedure(ast::ExternalProcedureDecl externalProcedure);
     void addTable(ast::TableDecl table);
     void addVariableDeclarationStatement(ast::VariableDeclarationStatement varDecl);
+    void addStatement(ast::Statement statement);
 
     [[nodiscard]] ast::ParameterDecl makeParameter(std::string name, const ast::SourceLocation &location);
     void finalize();

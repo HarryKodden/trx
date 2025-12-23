@@ -17,6 +17,7 @@ public:
     std::optional<JsonValue> execute(const std::string &procedureName, const JsonValue &input);
 
     const ast::ProcedureDecl* getProcedure(const std::string &name) const;
+    const ast::RecordDecl* getRecord(const std::string &name) const;
 
     // Accessors for SQL operations
     DatabaseDriver& db() const { return *dbDriver_; }
@@ -25,9 +26,15 @@ public:
     std::unordered_map<std::string, JsonValue>& globalVariables() { return globalVariables_; }
     const std::unordered_map<std::string, JsonValue>& globalVariables() const { return globalVariables_; }
 
+    // SQLCODE access
+    double getSqlCode() const { return sqlCode_; }
+    void setSqlCode(double code) { sqlCode_ = code; }
+
 private:
     const ast::Module &module_;
+    double sqlCode_{0.0}; // SQL return code
     std::unordered_map<std::string, const ast::ProcedureDecl*> procedures_;
+    std::unordered_map<std::string, const ast::RecordDecl*> records_;
     std::unordered_map<std::string, JsonValue> globalVariables_;
     std::unique_ptr<DatabaseDriver> dbDriver_;
 };

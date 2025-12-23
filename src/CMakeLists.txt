@@ -25,7 +25,7 @@ endif()
 
 # Check for PostgreSQL headers
 if(POSTGRESQL_FOUND)
-    check_include_file_cxx(libpq-fe.h HAVE_LIBPQ_FE_H)
+    check_include_file_cxx(postgresql/libpq-fe.h HAVE_LIBPQ_FE_H)
     if(HAVE_LIBPQ_FE_H)
         set(POSTGRESQL_SUPPORTED TRUE)
     endif()

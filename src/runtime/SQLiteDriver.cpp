@@ -151,13 +151,29 @@ std::vector<SqlValue> SQLiteDriver::cursorGetRow(const std::string& name) {
                     value = SqlValue(sqlite3_column_double(stmt, i));
                     break;
                 case SQLITE_TEXT:
-                    value = SqlValue(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, i))));
+                    {
+                        int bytes = sqlite3_column_bytes(stmt, i);
+                        const unsigned char* utf8 = sqlite3_column_text(stmt, i);
+                        if (utf8 && bytes > 0) {
+                            value = SqlValue(std::string(reinterpret_cast<const char*>(utf8), bytes));
+                        } else {
+                            value = SqlValue(std::string(""));
+                        }
+                    }
                     break;
                 case SQLITE_NULL:
                     value = SqlValue(nullptr);
                     break;
                 default:
-                    value = SqlValue(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, i))));
+                    {
+                        int bytes = sqlite3_column_bytes(stmt, i);
+                        const unsigned char* utf8 = sqlite3_column_text(stmt, i);
+                        if (utf8 && bytes > 0) {
+                            value = SqlValue(std::string(reinterpret_cast<const char*>(utf8), bytes));
+                        } else {
+                            value = SqlValue(std::string(""));
+                        }
+                    }
                     break;
             }
 
@@ -248,6 +264,51 @@ void SQLiteDriver::commitTransaction() {
 
 void SQLiteDriver::rollbackTransaction() {
     executeSql("ROLLBACK");
+}
+
+std::vector<TableColumn> SQLiteDriver::getTableSchema(const std::string& tableName) {
+    std::string sql = "PRAGMA table_info(" + tableName + ")";
+    auto results = querySql(sql);
+    
+    std::vector<TableColumn> columns;
+    for (const auto& row : results) {
+        if (row.size() >= 6) {
+            TableColumn col;
+            col.name = row[1].asString(); // name
+            std::string typeStr = row[2].asString(); // type
+            
+            // Map SQLite types to TRX types
+            if (typeStr.find("INT") != std::string::npos) {
+                col.typeName = "INTEGER";
+            } else if (typeStr.find("CHAR") != std::string::npos || typeStr.find("TEXT") != std::string::npos) {
+                col.typeName = "CHAR";
+                // Extract length if present
+                size_t parenPos = typeStr.find('(');
+                if (parenPos != std::string::npos) {
+                    size_t endPos = typeStr.find(')', parenPos);
+                    if (endPos != std::string::npos) {
+                        std::string lenStr = typeStr.substr(parenPos + 1, endPos - parenPos - 1);
+                        try {
+                            col.length = std::stoi(lenStr);
+                        } catch (...) {}
+                    }
+                }
+            } else if (typeStr.find("DECIMAL") != std::string::npos || typeStr.find("REAL") != std::string::npos) {
+                col.typeName = "DECIMAL";
+            } else if (typeStr.find("BOOL") != std::string::npos) {
+                col.typeName = "BOOLEAN";
+            } else {
+                col.typeName = "CHAR"; // Default
+            }
+            
+            col.isNullable = !row[3].asBool(); // notnull (0 = nullable, 1 = not null)
+            col.isPrimaryKey = row[5].asNumber() > 0; // pk
+            
+            columns.push_back(col);
+        }
+    }
+    
+    return columns;
 }
 
 void SQLiteDriver::bindParameters(sqlite3_stmt* stmt, const std::vector<SqlParameter>& params) {

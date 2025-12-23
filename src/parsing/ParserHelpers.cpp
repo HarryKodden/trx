@@ -38,9 +38,42 @@ void ParserContext::addRecord(ast::RecordDecl record) {
     const std::string recordName = record.name.name;
     const auto [it, inserted] = recordIndex_.emplace(recordName, record.name.location);
     if (!inserted) {
-        std::ostringstream message;
-        message << "Record '" << recordName << "' already defined";
-        diagnosticEngine().report(diagnostics::Diagnostic::Level::Error, message.str(), record.name.location);
+        // Check if the existing record has the same structure
+        for (const auto &decl : module_.declarations) {
+            if (std::holds_alternative<ast::RecordDecl>(decl)) {
+                const auto &existingRecord = std::get<ast::RecordDecl>(decl);
+                if (existingRecord.name.name == recordName) {
+                    // Compare field structures
+                    if (existingRecord.fields.size() == record.fields.size()) {
+                        bool fieldsMatch = true;
+                        for (size_t i = 0; i < existingRecord.fields.size(); ++i) {
+                            const auto &existingField = existingRecord.fields[i];
+                            const auto &newField = record.fields[i];
+                            if (existingField.name.name != newField.name.name ||
+                                existingField.typeName != newField.typeName ||
+                                existingField.length != newField.length ||
+                                existingField.dimension != newField.dimension ||
+                                existingField.scale != newField.scale ||
+                                existingField.jsonName != newField.jsonName ||
+                                existingField.jsonOmitEmpty != newField.jsonOmitEmpty ||
+                                existingField.hasExplicitJsonName != newField.hasExplicitJsonName) {
+                                fieldsMatch = false;
+                                break;
+                            }
+                        }
+                        if (fieldsMatch) {
+                            // Identical record, allow duplicate
+                            return;
+                        }
+                    }
+                    // Fields don't match, report error
+                    std::ostringstream message;
+                    message << "Record '" << recordName << "' already defined with different structure";
+                    diagnosticEngine().report(diagnostics::Diagnostic::Level::Error, message.str(), record.name.location);
+                    return;
+                }
+            }
+        }
     }
 
     module_.declarations.emplace_back(std::move(record));
@@ -60,6 +93,10 @@ void ParserContext::addTable(ast::TableDecl table) {
 
 void ParserContext::addVariableDeclarationStatement(ast::VariableDeclarationStatement varDecl) {
     module_.declarations.emplace_back(std::move(varDecl));
+}
+
+void ParserContext::addStatement(ast::Statement statement) {
+    module_.statements.emplace_back(std::move(statement));
 }
 
 ast::ParameterDecl ParserContext::makeParameter(std::string name, const ast::SourceLocation &location) {

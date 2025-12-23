@@ -23,10 +23,12 @@ services:
     ports:
       - "8080:8080"
     environment:
+      # DATABASE_TYPE: SQLITE
+      # DATABASE_CONNECTION_STRING: /workspace/sample.db
       DATABASE_TYPE: POSTGRESQL
       DATABASE_CONNECTION_STRING: host=postgres port=5432 dbname=trx user=trx password=password
       # DATABASE_TYPE: ODBC
       # DATABASE_CONNECTION_STRING: DRIVER={PostgreSQL Unicode};SERVER=postgres;PORT=5432;DATABASE=trx;UID=trx;PWD=password;
     volumes:
       - ./examples:/workspace/
-    command: ["serve", "sample.trx"]
+    command: ["serve"]

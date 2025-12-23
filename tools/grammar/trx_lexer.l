@@ -93,9 +93,10 @@ PROCEDURE       { return PROCEDURE; }
 [Cc][Oo][Nn][Ss][Tt][Aa][Nn][Tt] { return CONSTANT; }
 [Ff][Uu][Nn][Cc][Tt][Ii][Oo][Nn] { return FUNCTION; }
 [Tt][Yy][Pp][Ee] { return TYPE; }
+[Ff][Rr][Oo][Mm] { return FROM; }
+[Tt][Aa][Bb][Ll][Ee] { return TABLE; }
 [Nn][Uu][Ll][Ll] { return NULL_K; }
 [Ii][Ff] { return IF; }
-[Tt][Hh][Ee][Nn] { return THEN; }
 [Ee][Ll][Ss][Ee] { return ELSE; }
 [Ww][Hh][Ii][Ll][Ee] { return WHILE; }
 [Ss][Ww][Ii][Tt][Cc][Hh] { return SWITCH; }
@@ -111,6 +112,7 @@ PROCEDURE       { return PROCEDURE; }
 [Aa][Nn][Dd] { return AND; }
 [Oo][Rr] { return OR; }
 [Nn][Oo][Tt] { return NOT; }
+[Jj][Ss][Oo][Nn] { return JSON; }
 [Cc][Hh][Aa][Rr] { return _CHAR; }
 [Ii][Nn][Tt][Ee][Gg][Ee][Rr] { return _INTEGER; }
 [Ss][Mm][Aa][Ll][Ll][Ii][Nn][Tt] { return _SMALLINT; }
@@ -120,7 +122,10 @@ PROCEDURE       { return PROCEDURE; }
 [Bb][Ll][Oo][Bb] { return _BLOB; }
 [Dd][Aa][Tt][Ee] { return DATE; }
 [Tt][Ii][Mm][Ee] { return TIME; }
-[Jj][Ss][Oo][Nn] { return JSON; }
+[Ww][Ee][Ee][Kk] { return WEEK; }
+[Tt][Ii][Mm][Ee][Ss][Tt][Aa][Mm][Pp] { return TIMESTAMP; }
+[Ww][Ee][Ee][Kk][Dd][Aa][Yy] { return WEEKDAY; }
+[Ss][Qq][Ll][Cc][Oo][Dd][Ee] { return SQLCODE; }
 
 "{"             { return LBRACE; }
 "}"             { return RBRACE; }

@@ -1,5 +1,5 @@
 VAR config := {"database": "sqlite"};
 
-FUNCTION main() {
+PROCEDURE main() {
     trace(config);
 }

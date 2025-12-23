@@ -26,6 +26,7 @@ public:
     std::vector<SqlValue> cursorGetRow(const std::string& name) override;
     void closeCursor(const std::string& name) override;
     void createOrMigrateTable(const std::string& tableName, const std::vector<TableColumn>& columns) override;
+    std::vector<TableColumn> getTableSchema(const std::string& tableName) override;
     void beginTransaction() override;
     void commitTransaction() override;
     void rollbackTransaction() override;
@@ -34,7 +35,8 @@ public:
 private:
     DatabaseConfig config_;
     PGconn* conn_;
-    std::unordered_map<std::string, PGresult*> cursors_;
+    std::unordered_map<std::string, bool> cursors_; // Just track if cursor is declared
+    std::unordered_map<std::string, std::vector<SqlValue>> currentRows_;
 };
 
 } // namespace trx::runtime

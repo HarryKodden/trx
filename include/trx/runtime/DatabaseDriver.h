@@ -91,6 +91,13 @@ public:
     virtual void createOrMigrateTable(const std::string& tableName, const std::vector<TableColumn>& columns) = 0;
 
     /**
+     * Get the schema of an existing table.
+     * @param tableName Name of the table
+     * @return Vector of column definitions, or empty if table doesn't exist
+     */
+    virtual std::vector<TableColumn> getTableSchema(const std::string& tableName) = 0;
+
+    /**
      * Check if currently in a transaction.
      * @return true if in a transaction, false otherwise
      */

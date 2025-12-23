@@ -1,5 +1,5 @@
 VAR x := 42;
 
-FUNCTION test_json() {
+PROCEDURE test_json() {
     return x;
 }

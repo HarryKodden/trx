@@ -138,7 +138,7 @@ bool runControlStatementTests() {
         }
 
         FUNCTION branching(SAMPLE): SAMPLE {
-            IF input.VALUE > 0 THEN {
+            IF input.VALUE > 0 {
                 output.RESULT := input.VALUE;
             } ELSE {
                 output.RESULT := 0;
