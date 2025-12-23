@@ -1,0 +1,45 @@
+INCLUDE init.trx;
+
+PROCEDURE demo_http() {
+    // Example HTTP GET request
+    var get_response := http_request({
+        "method": "GET",
+        "url": "https://httpbin.org/get",
+        "headers": {
+            "User-Agent": "TRX-Language/1.0",
+            "Accept": "application/json"
+        },
+        "timeout": 10
+    });
+
+    trace("GET Response Status: " + get_response.status);
+    trace("GET Response: " + get_response.body);
+
+    // Example HTTP POST request
+    var post_response := http_request({
+        "method": "POST",
+        "url": "https://httpbin.org/post",
+        "headers": {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer demo-token"
+        },
+        "body": {
+            "message": "Hello from TRX!",
+            "timestamp": timestamp,
+            "user": {
+                "name": "Demo User",
+                "active": true
+            }
+        },
+        "timeout": 15
+    });
+
+    trace("POST Response Status: " + post_response.status);
+    trace("POST Response: " + post_response.body);
+
+    output := {
+        "get_status": get_response.status,
+        "post_status": post_response.status,
+        "demo": "HTTP requests completed"
+    };
+}

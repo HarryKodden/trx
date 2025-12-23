@@ -126,6 +126,19 @@ PROCEDURE       { return PROCEDURE; }
 [Tt][Ii][Mm][Ee][Ss][Tt][Aa][Mm][Pp] { return TIMESTAMP; }
 [Ww][Ee][Ee][Kk][Dd][Aa][Yy] { return WEEKDAY; }
 [Ss][Qq][Ll][Cc][Oo][Dd][Ee] { return SQLCODE; }
+[Hh][Tt][Tt][Pp] { return HTTP; }
+[Gg][Ee][Tt] { return GET; }
+[Pp][Oo][Ss][Tt] { return POST; }
+[Pp][Uu][Tt] { return PUT; }
+[Dd][Ee][Ll][Ee][Tt][Ee] { return DELETE; }
+[Pp][Aa][Tt][Cc][Hh] { return PATCH; }
+[Hh][Ee][Aa][Dd] { return HEAD; }
+[Oo][Pp][Tt][Ii][Oo][Nn][Ss] { return OPTIONS; }
+[Hh][Ee][Aa][Dd][Ee][Rr][Ss] { return HEADERS; }
+[Bb][Oo][Dd][Yy] { return BODY; }
+[Mm][Ee][Tt][Hh][Oo][Dd] { return METHOD; }
+[Uu][Rr][Ll] { return URL; }
+[Tt][Ii][Mm][Ee][Oo][Uu][Tt] { return TIMEOUT; }
 
 "{"             { return LBRACE; }
 "}"             { return RBRACE; }

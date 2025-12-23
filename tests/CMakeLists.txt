@@ -154,3 +154,18 @@ add_test(
   NAME BuiltinTest
   COMMAND trx_builtin_test
 )
+
+add_executable(trx_http_test
+  runtime/TestUtils.h
+  runtime/HttpTest.cpp
+)
+
+target_link_libraries(trx_http_test
+  PRIVATE
+    trx_core
+)
+
+add_test(
+  NAME HttpTest
+  COMMAND trx_http_test
+)

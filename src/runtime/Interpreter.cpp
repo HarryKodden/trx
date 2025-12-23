@@ -246,6 +246,19 @@ JsonValue evaluateFunctionCall(const trx::ast::FunctionCallExpression &call, Exe
         std::cout << "TRACE: " << arg << std::endl;
         return JsonValue(nullptr); // Logging functions return null
     }
+    if (call.functionName == "http_request") {
+        if (call.arguments.size() != 1) throw std::runtime_error("http_request function takes 1 argument");
+        JsonValue config = evaluateExpression(call.arguments[0], context);
+        if (!config.isObject()) throw std::runtime_error("http_request argument must be an object");
+
+        // For now, return a mock response
+        // TODO: Implement actual HTTP client
+        JsonValue::Object response;
+        response["status"] = JsonValue(200.0);
+        response["headers"] = JsonValue(JsonValue::Object{{"content-type", JsonValue("application/json")}});
+        response["body"] = JsonValue(JsonValue::Object{{"message", JsonValue("HTTP request not yet implemented")}});
+        return JsonValue(response);
+    }
     // For user-defined procedures
     const auto *proc = context.interpreter.getProcedure(call.functionName);
     if (proc) {
@@ -558,6 +571,9 @@ void executeVariableDeclaration(const trx::ast::VariableDeclarationStatement &va
                     // If parsing fails, leave as nullptr
                 }
             }
+        } else if (varDecl.typeName == "JSON") {
+            // Initialize JSON variables as null
+            initialValue = JsonValue(nullptr);
         } else if (context.interpreter.getRecord(varDecl.typeName)) {
             // Initialize record variables as empty objects
             initialValue = JsonValue(JsonValue::Object{});
