@@ -101,7 +101,6 @@ PROCEDURE       { return PROCEDURE; }
 [Ss][Ww][Ii][Tt][Cc][Hh] { return SWITCH; }
 [Cc][Aa][Ss][Ee] { return CASE; }
 [Dd][Ee][Ff][Aa][Uu][Ll][Tt] { return DEFAULT; }
-[Cc][Aa][Ll][Ll] { return CALL; }
 [Tt][Rr][Yy] { return TRY; }
 [Vv][Aa][Rr] { return VAR; }
 [Cc][Aa][Tt][Cc][Hh] { return CATCH; }

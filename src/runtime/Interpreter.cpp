@@ -702,19 +702,6 @@ void executeBatch(const trx::ast::BatchStatement &batchStmt, ExecutionContext &c
     // In a real implementation, this would execute the batch process
 }
 
-void executeCall(const trx::ast::CallStatement &callStmt, ExecutionContext &context) {
-    JsonValue inputVal = callStmt.input ? resolveVariableValue(*callStmt.input, context) : JsonValue();
-    auto result = context.interpreter.execute(callStmt.name, inputVal);
-    if (callStmt.output) {
-        if (!result) {
-            throw std::runtime_error("Cannot assign output from procedure call");
-        }
-        resolveVariableTarget(*callStmt.output, context) = *result;
-    } else if (result) {
-        throw std::runtime_error("Function call result ignored");
-    }
-}
-
 struct ReturnException : std::exception {
     JsonValue value;
     ReturnException(JsonValue v) : value(std::move(v)) {}
@@ -892,7 +879,6 @@ void executeStatement(const trx::ast::Statement &statement, ExecutionContext &co
             [&](const trx::ast::ExpressionStatement &exprStmt) { executeExpression(exprStmt, context); },
             [&](const trx::ast::SystemStatement &systemStmt) { executeSystem(systemStmt, context); },
             [&](const trx::ast::BatchStatement &batchStmt) { executeBatch(batchStmt, context); },
-            [&](const trx::ast::CallStatement &callStmt) { executeCall(callStmt, context); },
             [&](const trx::ast::ReturnStatement &returnStmt) { executeReturn(returnStmt, context); },
             [&](const trx::ast::ValidateStatement &validateStmt) { executeValidate(validateStmt, context); },
             [&](const trx::ast::SqlStatement &sqlStmt) { executeSql(sqlStmt, context); },

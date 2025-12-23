@@ -59,13 +59,6 @@ struct ThrowStatement {
     ExpressionPtr value;
 };
 
-struct CallStatement {
-    std::string name;
-    std::optional<VariableExpression> input;
-    std::optional<VariableExpression> output;
-    bool sync{false};
-};
-
 enum class SqlStatementKind {
     ExecImmediate,
     DeclareCursor,
@@ -141,7 +134,6 @@ struct Statement {
                               BatchStatement,
                               ThrowStatement,
                               TryCatchStatement,
-                              CallStatement,
                               SqlStatement,
                               IfStatement,
                               WhileStatement,

@@ -65,21 +65,6 @@ add_test(
   COMMAND trx_sql_statement_test
 )
 
-add_executable(trx_call_statement_test
-  runtime/TestUtils.h
-  runtime/CallStatementTest.cpp
-)
-
-target_link_libraries(trx_call_statement_test
-  PRIVATE
-    trx_core
-)
-
-add_test(
-  NAME CallStatementTest
-  COMMAND trx_call_statement_test
-)
-
 add_executable(trx_exception_handling_test
   runtime/TestUtils.h
   runtime/ExceptionHandlingTest.cpp
