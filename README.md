@@ -14,12 +14,14 @@ TRX provides a comprehensive set of features for transaction processing:
 - **Control Flow**: IF-ELSE, WHILE loops, and SWITCH statements with CASE/DEFAULT
 - **Exception Handling**: TRY-CATCH blocks and THROW statements for error management
 - **SQL Integration**: Direct SQL execution with host variables, cursors, and transaction management
-- **Built-in Functions**: String manipulation (substr), list operations (len, append), logging (debug, info, error)
+- **HTTP API Integration**: Built-in HTTP client for making REST API calls with JSON request/response handling
+- **Built-in Functions**: String manipulation (substr), list operations (len, append), logging (debug, info, error), HTTP requests (http_request)
 - **Modules**: INCLUDE statements for code organization across multiple files (allows duplicate identical type definitions)
 
 ### Runtime Features
 - **Database Connectivity**: Support for SQLite, PostgreSQL, and ODBC connections
 - **Transaction Management**: Automatic transaction handling with rollback on errors
+- **HTTP API Client**: Built-in HTTP client for making REST API calls with JSON serialization
 - **REST API Server**: Built-in HTTP server for exposing procedures as web services
 - **JSON Serialization**: Automatic conversion between TRX records and JSON
 
@@ -65,6 +67,30 @@ PROCEDURE process_data() {
         }
     }
 }
+
+PROCEDURE send_notification() {
+    VAR request_config JSON := {
+        "method": "POST",
+        "url": "https://api.example.com/notify",
+        "headers": {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + api_token
+        },
+        "body": {
+            "message": "Processing completed",
+            "timestamp": timestamp
+        },
+        "timeout": 30
+    };
+    
+    VAR response JSON := http_request(request_config);
+    
+    IF response.status = 200 {
+        trace("Notification sent successfully");
+    } ELSE {
+        THROW "Failed to send notification: " + response.status;
+    }
+}
 ```
 
 ### Automatic Type Definition from Database Tables
@@ -85,11 +111,79 @@ TYPE PERSON FROM TABLE person;
 
 This feature introspects the database at runtime and creates the appropriate TRX record type with correct field types, lengths, and constraints.
 
+### HTTP API Integration
+
+TRX provides built-in HTTP client functionality for making REST API calls with full JSON request/response handling:
+
+```trx
+PROCEDURE api_call_example() {
+    VAR request_config JSON := {
+        "method": "POST",
+        "url": "https://jsonplaceholder.typicode.com/posts",
+        "headers": {
+            "Content-Type": "application/json",
+            "User-Agent": "TRX-Client/1.0"
+        },
+        "body": {
+            "title": "Sample Post",
+            "body": "This is a test post",
+            "userId": 1
+        },
+        "timeout": 10
+    };
+    
+    VAR response JSON := http_request(request_config);
+    
+    IF response.status = 201 {
+        trace("Post created with ID: " + response.body.id);
+    } ELSE {
+        error("API call failed with status: " + response.status);
+    }
+}
+
+PROCEDURE get_user_data() {
+    VAR request_config JSON := {
+        "method": "GET",
+        "url": "https://jsonplaceholder.typicode.com/users/1",
+        "headers": {
+            "Accept": "application/json"
+        },
+        "timeout": 5
+    };
+    
+    VAR response JSON := http_request(request_config);
+    
+    IF response.status = 200 {
+        VAR user JSON := response.body;
+        output := {
+            "name": user.name,
+            "email": user.email,
+            "company": user.company.name
+        };
+    } ELSE {
+        THROW "Failed to fetch user data";
+    }
+}
+```
+
+**HTTP Request Configuration:**
+- `method`: HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS)
+- `url`: Target URL (supports query parameters)
+- `headers`: Optional HTTP headers as JSON object
+- `body`: Optional request body as JSON (automatically serialized)
+- `timeout`: Request timeout in seconds (default: 30)
+
+**HTTP Response Structure:**
+- `status`: HTTP status code (number)
+- `headers`: Response headers as JSON object
+- `body`: Response body parsed as JSON
+
 ### Key Constructs
 - **Declarations**: TYPE (manual or from table), CONSTANT, VAR, FUNCTION, PROCEDURE
-- **Statements**: Assignment (:=), SQL execution, control flow, calls
-- **Expressions**: Arithmetic, comparison, logical, function calls, field access
+- **Statements**: Assignment (:=), SQL execution, HTTP requests, control flow, calls
+- **Expressions**: Arithmetic, comparison, logical, function calls, field access, JSON objects
 - **SQL**: EXEC_SQL, cursors (DECLARE, OPEN, FETCH, CLOSE), host variables (:var)
+- **HTTP**: http_request() function with JSON configuration for REST API calls
 
 ## Usage
 
@@ -212,6 +306,7 @@ See the `examples/` directory for sample TRX programs:
 - `exception_test.trx`: Error handling examples
 - `global_test.trx`: Global variables and functions
 - `test_function.trx`: Function definitions and calls
+- `http_demo.trx`: HTTP API integration examples with GET and POST requests
 
 ## Architecture
 
