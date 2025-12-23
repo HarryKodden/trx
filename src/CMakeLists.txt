@@ -1,5 +1,36 @@
 add_library(trx_core)
 
+# Find SQLite3
+find_package(SQLite3 REQUIRED)
+
+# Find ODBC (optional)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(ODBC odbc)
+
+# Find PostgreSQL (optional)
+pkg_check_modules(POSTGRESQL libpq)
+
+find_package(BISON 3.7 REQUIRED)
+find_package(FLEX REQUIRED)
+
+include(CheckIncludeFileCXX)
+
+# Check for ODBC headers
+if(ODBC_FOUND)
+    check_include_file_cxx(sql.h HAVE_SQL_H)
+    if(HAVE_SQL_H)
+        set(ODBC_SUPPORTED TRUE)
+    endif()
+endif()
+
+# Check for PostgreSQL headers
+if(POSTGRESQL_FOUND)
+    check_include_file_cxx(libpq-fe.h HAVE_LIBPQ_FE_H)
+    if(HAVE_LIBPQ_FE_H)
+        set(POSTGRESQL_SUPPORTED TRUE)
+    endif()
+endif()
+
 target_sources(trx_core
   PRIVATE
     ast/Module.cpp
@@ -12,44 +43,16 @@ target_sources(trx_core
     runtime/JsonValue.cpp
     runtime/DatabaseDriverFactory.cpp
     runtime/SQLiteDriver.cpp
-    runtime/PostgreSQLDriver.cpp
-    runtime/ODBCDriver.cpp
 )
 
 # Add optional database drivers
-if(ODBC_FOUND)
+if(ODBC_SUPPORTED)
+    target_sources(trx_core PRIVATE runtime/ODBCDriver.cpp)
     target_compile_definitions(trx_core PRIVATE HAVE_ODBC)
 endif()
 
-if(POSTGRESQL_FOUND)
-    target_compile_definitions(trx_core PRIVATE HAVE_POSTGRESQL)
-endif()
-
-target_include_directories(trx_core
-  PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-find_package(BISON 3.7 REQUIRED)
-find_package(FLEX REQUIRED)
-
-# Find SQLite3
-find_package(SQLite3 REQUIRED)
-
-# Find ODBC (optional)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(ODBC odbc)
-if(ODBC_FOUND)
-    target_link_libraries(trx_core PRIVATE ${ODBC_LIBRARIES})
-    target_include_directories(trx_core PRIVATE ${ODBC_INCLUDE_DIRS})
-    target_compile_definitions(trx_core PRIVATE HAVE_ODBC)
-endif()
-
-# Find PostgreSQL (optional)
-pkg_check_modules(POSTGRESQL libpq)
-if(POSTGRESQL_FOUND)
-    target_link_libraries(trx_core PRIVATE ${POSTGRESQL_LIBRARIES})
-    target_include_directories(trx_core PRIVATE ${POSTGRESQL_INCLUDE_DIRS})
+if(POSTGRESQL_SUPPORTED)
+    target_sources(trx_core PRIVATE runtime/PostgreSQLDriver.cpp)
     target_compile_definitions(trx_core PRIVATE HAVE_POSTGRESQL)
 endif()
 
@@ -73,9 +76,19 @@ target_sources(trx_core
 )
 
 target_include_directories(trx_core
+  PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
   PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
 )
+
+if(ODBC_SUPPORTED)
+    target_include_directories(trx_core PRIVATE ${ODBC_INCLUDE_DIRS})
+endif()
+
+if(POSTGRESQL_SUPPORTED)
+    target_include_directories(trx_core PRIVATE ${POSTGRESQL_INCLUDE_DIRS})
+endif()
 
 target_compile_definitions(trx_core
   PRIVATE
@@ -90,10 +103,10 @@ elseif(FLEX_LIBRARIES)
 endif()
 
 target_link_libraries(trx_core PRIVATE SQLite::SQLite3)
-if(ODBC_FOUND)
+if(ODBC_SUPPORTED)
     target_link_libraries(trx_core PRIVATE ${ODBC_LIBRARIES})
 endif()
-if(POSTGRESQL_FOUND)
+if(POSTGRESQL_SUPPORTED)
     target_link_libraries(trx_core PRIVATE ${POSTGRESQL_LIBRARIES})
 endif()
 
