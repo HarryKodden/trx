@@ -124,3 +124,18 @@ add_test(
   NAME ListOperationsTest
   COMMAND trx_list_operations_test
 )
+
+add_executable(trx_switch_statement_test
+  runtime/TestUtils.h
+  runtime/SwitchStatementTest.cpp
+)
+
+target_link_libraries(trx_switch_statement_test
+  PRIVATE
+    trx_core
+)
+
+add_test(
+  NAME SwitchStatementTest
+  COMMAND trx_switch_statement_test
+)

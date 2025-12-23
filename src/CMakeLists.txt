@@ -16,6 +16,15 @@ target_sources(trx_core
     runtime/ODBCDriver.cpp
 )
 
+# Add optional database drivers
+if(ODBC_FOUND)
+    target_compile_definitions(trx_core PRIVATE HAVE_ODBC)
+endif()
+
+if(POSTGRESQL_FOUND)
+    target_compile_definitions(trx_core PRIVATE HAVE_POSTGRESQL)
+endif()
+
 target_include_directories(trx_core
   PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -27,16 +36,22 @@ find_package(FLEX REQUIRED)
 # Find SQLite3
 find_package(SQLite3 REQUIRED)
 
-# Find ODBC
+# Find ODBC (optional)
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(ODBC REQUIRED odbc)
-target_link_libraries(trx_core PRIVATE ${ODBC_LIBRARIES})
-target_include_directories(trx_core PRIVATE ${ODBC_INCLUDE_DIRS})
+pkg_check_modules(ODBC odbc)
+if(ODBC_FOUND)
+    target_link_libraries(trx_core PRIVATE ${ODBC_LIBRARIES})
+    target_include_directories(trx_core PRIVATE ${ODBC_INCLUDE_DIRS})
+    target_compile_definitions(trx_core PRIVATE HAVE_ODBC)
+endif()
 
-# Find PostgreSQL
-pkg_check_modules(POSTGRESQL REQUIRED libpq)
-target_link_libraries(trx_core PRIVATE ${POSTGRESQL_LIBRARIES})
-target_include_directories(trx_core PRIVATE ${POSTGRESQL_INCLUDE_DIRS})
+# Find PostgreSQL (optional)
+pkg_check_modules(POSTGRESQL libpq)
+if(POSTGRESQL_FOUND)
+    target_link_libraries(trx_core PRIVATE ${POSTGRESQL_LIBRARIES})
+    target_include_directories(trx_core PRIVATE ${POSTGRESQL_INCLUDE_DIRS})
+    target_compile_definitions(trx_core PRIVATE HAVE_POSTGRESQL)
+endif()
 
 BISON_TARGET(TRXParser
   ${CMAKE_CURRENT_SOURCE_DIR}/../tools/grammar/trx_parser.y
@@ -74,7 +89,13 @@ elseif(FLEX_LIBRARIES)
   target_link_libraries(trx_core PRIVATE ${FLEX_LIBRARIES})
 endif()
 
-target_link_libraries(trx_core PRIVATE SQLite::SQLite3 ${ODBC_LIBRARIES} ${POSTGRESQL_LIBRARIES})
+target_link_libraries(trx_core PRIVATE SQLite::SQLite3)
+if(ODBC_FOUND)
+    target_link_libraries(trx_core PRIVATE ${ODBC_LIBRARIES})
+endif()
+if(POSTGRESQL_FOUND)
+    target_link_libraries(trx_core PRIVATE ${POSTGRESQL_LIBRARIES})
+endif()
 
 add_executable(trx_compiler
   cli/main.cpp

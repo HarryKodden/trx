@@ -1,102 +1,203 @@
-# TRX Rewrite
+# TRX - Transaction Processing Language
 
-This directory hosts a ground-up rewrite of the TRX transaction toolkit with a focus on composable modules, modern tooling, and explicit data structures.
+TRX is a domain-specific language for transaction processing, designed for building reliable database applications with explicit data structures, control flow, and error handling.
 
-## Goals
+## Features
 
-- Replace the monolithic legacy build with an incremental, testable C++ project.
-- Keep the original parsing grammar semantics while organising supporting code into cohesive libraries.
-- Provide clear separation between the parser, semantic actions, runtime services, and persistence layers.
+TRX provides a comprehensive set of features for transaction processing:
 
-## Layout
+### Core Language Features
+- **Strong Typing**: Record types, lists, and built-in types (INTEGER, CHAR, BOOLEAN, DECIMAL, etc.)
+- **Variables and Constants**: Global and local variable declarations with type safety
+- **Functions and Procedures**: Modular code organization with input/output parameters
+- **Control Flow**: IF-ELSE, WHILE loops, and SWITCH statements with CASE/DEFAULT
+- **Exception Handling**: TRY-CATCH blocks and THROW statements for error management
+- **SQL Integration**: Direct SQL execution with host variables, cursors, and transaction management
+- **Built-in Functions**: String manipulation (substr), list operations (len, append), logging (debug, info, error)
+- **Modules**: INCLUDE statements for code organization across multiple files
 
+### Runtime Features
+- **Database Connectivity**: Support for SQLite, PostgreSQL, and ODBC connections
+- **Transaction Management**: Automatic transaction handling with rollback on errors
+- **REST API Server**: Built-in HTTP server for exposing procedures as web services
+- **JSON Serialization**: Automatic conversion between TRX records and JSON
+
+## Grammar Overview
+
+TRX uses a Pascal-like syntax with SQL integration:
+
+```trx
+TYPE PERSON {
+    ID INTEGER;
+    NAME CHAR(64);
+    AGE INTEGER;
+}
+
+CONSTANT MAX_AGE 100;
+
+FUNCTION calculate_bonus(PERSON): PERSON {
+    IF input.AGE > 50 THEN {
+        output.ID := input.ID;
+        output.NAME := input.NAME;
+        output.AGE := input.AGE + 10;
+    } ELSE {
+        output := input;
+    }
+    RETURN output;
+}
+
+PROCEDURE process_data() {
+    VAR employees LIST(PERSON);
+    
+    EXEC_SQL SELECT ID, NAME, AGE FROM employees;
+    
+    WHILE SQLCODE = 0 {
+        VAR emp PERSON;
+        FETCH emp FROM employees_cursor;
+        
+        TRY {
+            calculate_bonus(emp);
+        } CATCH {
+            THROW "Processing failed";
+        }
+    }
+}
 ```
-rewrite/
-  CMakeLists.txt        # Top-level build definition
-  cmake/                # CMake helper modules
-  include/              # Public headers grouped by domain
-    trx/
-      ast/
-      diagnostics/
-      parsing/
-      runtime/
-  src/
-    ast/
-    diagnostics/
-    parsing/
-    runtime/
-    cli/
-  tools/
-    grammar/
-      trx_parser.y      # Bison grammar (C++ skeleton)
-      trx_lexer.l       # Flex lexer
+
+### Key Constructs
+- **Declarations**: TYPE, CONSTANT, VAR, FUNCTION, PROCEDURE
+- **Statements**: Assignment (:=), SQL execution, control flow, calls
+- **Expressions**: Arithmetic, comparison, logical, function calls, field access
+- **SQL**: EXEC_SQL, cursors (DECLARE, OPEN, FETCH, CLOSE), host variables (:var)
+
+## Usage
+
+### Command Line Options
+
+```bash
+# Compile and validate a TRX file
+trx_compiler source.trx
+
+# Execute a specific procedure
+trx_compiler --procedure procedure_name source.trx
+
+# Start REST API server
+trx_compiler serve --port 8080 source.trx
+
+# List available procedures in a file
+trx_compiler list source.trx
 ```
 
-Each submodule has a dedicated responsibility:
+### Run Options
 
-- `ast`: Immutable data structures that capture declarations, statements, and expressions produced by the parser.
-- `parsing`: Glue code between Flex/Bison and the AST builder.
-- `runtime`: Minimal services needed during compilation (symbol tables, memory management, include resolution).
-- `diagnostics`: Structured error and warning reporting utilities.
-- `cli`: Entry points for command line tools built on the library.
+- `trx_compiler <source.trx>`: Parse and validate the TRX source file
+- `trx_compiler --procedure <name> <source.trx>`: Execute a specific procedure/function
+- `trx_compiler serve [options] <sources...>`: Start HTTP server exposing procedures as REST endpoints
+  - `--port <port>`: Server port (default: 8080)
+  - `--procedure <name>`: Only expose specific procedure (default: all)
+- `trx_compiler list <source.trx>`: List all procedures and functions defined in the file
 
-## Next Steps
+### Database Connection Options
 
-1. Implement the foundational diagnostics and symbol table services.
-2. Port the parser actions to emit AST constructs instead of invoking global procedural APIs.
-3. Reintroduce database/code generation features as separate libraries once the parser layer is stable.
+TRX supports multiple database backends:
 
-## Tooling Requirements
+- **SQLite** (default):
+  - `--db-type sqlite`
+  - `--db-connection <path>` (default: `:memory:`)
+  - Environment: `DATABASE_TYPE=SQLITE`, `DATABASE_CONNECTION_STRING=<path>`
 
-The build expects modern toolchain components:
+- **PostgreSQL**:
+  - `--db-type postgresql`
+  - `--db-connection "<host=localhost port=5432 user=user dbname=db>"`
+  - Environment: `DATABASE_TYPE=POSTGRESQL`, `DATABASE_CONNECTION_STRING=<conn_str>`
+
+- **ODBC**:
+  - `--db-type odbc`
+  - `--db-connection "<DSN=my_dsn;UID=user;PWD=pass>"`
+  - Environment: `DATABASE_TYPE=ODBC`, `DATABASE_CONNECTION_STRING=<conn_str>`
+
+### REST API Server
+
+When running in serve mode, TRX automatically generates REST endpoints for each procedure:
+
+```bash
+# Start server
+trx_compiler serve --port 8080 examples/sample.trx
+
+# Call procedure via HTTP POST
+curl -X POST http://localhost:8080/process_employee \
+  -H "Content-Type: application/json" \
+  -d '{"ID": 1, "NAME": "John", "AGE": 30}'
+```
+
+The server provides:
+- Automatic JSON request/response handling
+- Swagger/OpenAPI documentation at `/swagger.json`
+- Error handling with proper HTTP status codes
+
+## Building and Testing
+
+### Prerequisites
 
 - CMake 3.22+
-- A C++20 capable compiler (tested with AppleClang 17)
-- Bison 3.7+ and Flex 2.6+ (`brew install bison flex` on macOS). Ensure `/usr/local/opt/bison/bin` occurs in `PATH` before configuring so CMake picks up the newer binaries.
+- C++20 compiler (AppleClang 17+, GCC 11+, MSVC 2022+)
+- Bison 3.7+ and Flex 2.6+
+- SQLite3 development headers
+- Optional: PostgreSQL and ODBC development headers
 
-### Containerised Build
+### Quick Build
 
-Run the following commands from the `rewrite/` directory. Build both the runtime image (ships the `trx_compiler` entrypoint) and a separate toolchain image with CMake, Ninja, Flex, and Bison installed:
+```bash
+# Configure
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
-```
-docker build -t trx-rewrite .
-docker build --target builder -t trx-rewrite-dev .
-```
+# Build
+cmake --build build
 
-#### How to build
+# Test
+cd build && ctest --output-on-failure
 
-Configure the project and compile it inside the toolchain image. This writes the artefacts to `build/` in your working tree:
-
-```
-docker run --rm -v "$PWD":/workspace --entrypoint bash trx-rewrite-dev \
-  -lc 'cmake -S /workspace -B /workspace/build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo && \
-       cmake --build /workspace/build'
-```
-
-#### How to test
-
-Re-use the configured build directory and drive CTest from within the same image:
-
-```
-docker run --rm -v "$PWD":/workspace --entrypoint bash trx-rewrite-dev \
-  -lc 'cd /workspace/build && ctest --output-on-failure'
+# Run
+./src/trx_compiler examples/sample.trx
 ```
 
-#### How to run
+### Docker Build
 
-Invoke the runtime image (whose entrypoint is `trx_compiler`) and pass it a TRX source file inside the mounted workspace:
+```bash
+# Build development image
+docker build --target builder -t trx-dev .
 
+# Build runtime image
+docker build -t trx-runtime .
+
+# Run tests
+docker run --rm -v "$PWD":/workspace trx-dev \
+  bash -c 'cd /workspace && cmake -S . -B build -G Ninja && cmake --build build && cd build && ctest'
+
+# Run compiler
+docker run --rm -v "$PWD":/workspace trx-runtime /workspace/examples/sample.trx
+
+# Start server
+docker run --rm -v "$PWD":/workspace -p 8080:8080 trx-runtime serve /workspace/examples/sample.trx
 ```
-docker run --rm -v "$PWD":/workspace trx-rewrite /workspace/examples/sample.trx
-```
 
-The compiler reports diagnostics or success without requiring any host-side dependencies beyond Docker.
+## Examples
 
-## Continuous Integration
+See the `examples/` directory for sample TRX programs:
 
-Pushes and pull requests targeting `main` trigger a GitHub Actions workflow that:
+- `sample.trx`: Basic record processing and SQL operations
+- `exception_test.trx`: Error handling examples
+- `global_test.trx`: Global variables and functions
+- `test_function.trx`: Function definitions and calls
 
-- Builds with warnings promoted to errors to provide lightweight linting.
-- Builds and tests the project via CTest on an Ubuntu runner.
-- Builds both the runtime and toolchain Docker images to ensure container definitions stay valid.
-# trx
+## Architecture
+
+TRX is built as a modular C++ project:
+
+- **AST**: Immutable data structures for parsed code
+- **Parsing**: Flex/Bison-based parser with semantic actions
+- **Runtime**: Interpreter with symbol tables, database drivers, and execution engine
+- **CLI**: Command-line interface and REST server
+- **Diagnostics**: Structured error reporting
+
+The design emphasizes testability, with comprehensive unit tests covering parsing, AST construction, and runtime execution.
