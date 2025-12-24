@@ -3,7 +3,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
-#include <optional>
+#include <thread>
 
 #include "trx/runtime/DatabaseDriver.h"
 
@@ -13,6 +13,7 @@ struct ServeOptions {
     int port{8080};
     std::optional<std::string> procedure;
     trx::runtime::DatabaseConfig dbConfig;
+    size_t threadCount{std::thread::hardware_concurrency()};
 };
 
 int runSwaggerServer(const std::vector<std::filesystem::path> &sourcePaths, ServeOptions options);

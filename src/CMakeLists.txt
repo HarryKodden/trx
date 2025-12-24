@@ -43,6 +43,7 @@ target_sources(trx_core
     runtime/JsonValue.cpp
     runtime/DatabaseDriverFactory.cpp
     runtime/SQLiteDriver.cpp
+    runtime/ThreadPool.cpp
 )
 
 # Add optional database drivers

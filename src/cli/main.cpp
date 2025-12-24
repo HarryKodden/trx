@@ -14,12 +14,15 @@ void printUsage() {
     std::cerr << "Usage:\n";
     std::cerr << "  trx_compiler <source.trx>\n";
     std::cerr << "  trx_compiler [--procedure <name>] [--db-type <type>] [--db-connection <conn>] <source.trx>\n";
-    std::cerr << "  trx_compiler serve [--port <port>] [--procedure <name>] [--db-type <type>] [--db-connection <conn>] [source paths...]\n";
+    std::cerr << "  trx_compiler serve [--port <port>] [--threads <count>] [--procedure <name>] [--db-type <type>] [--db-connection <conn>] [source paths...]\n";
     std::cerr << "  trx_compiler list <source.trx>\n";
     std::cerr << "    If no source paths are provided for serve, all .trx files in the current directory are used.\n";
     std::cerr << "\nDatabase options:\n";
     std::cerr << "  --db-type <type>        Database type: sqlite, postgresql, odbc (default: sqlite)\n";
     std::cerr << "  --db-connection <conn>  Database connection string/path (default: :memory: for sqlite)\n";
+    std::cerr << "\nServer options:\n";
+    std::cerr << "  --port <port>           Port to listen on (default: 8080)\n";
+    std::cerr << "  --threads <count>       Number of worker threads (default: hardware concurrency)\n";
 }
 
 void printDiagnostic(const trx::diagnostics::Diagnostic &diagnostic, const std::filesystem::path &filePath) {
@@ -92,6 +95,19 @@ int main(int argc, char *argv[]) {
         }
         if ((argument == "--procedure" || argument == "-r") && index + 1 < argc) {
             procedureToExecute = std::string{argv[++index]};
+            continue;
+        }
+        if ((argument == "--threads" || argument == "-T") && index + 1 < argc) {
+            try {
+                serveOptions.threadCount = std::stoul(argv[++index]);
+            } catch (const std::exception &) {
+                std::cerr << "Invalid thread count value\n";
+                return 1;
+            }
+            if (serveOptions.threadCount == 0) {
+                std::cerr << "Thread count must be at least 1\n";
+                return 1;
+            }
             continue;
         }
         if ((argument == "--db-type" || argument == "-t") && index + 1 < argc) {

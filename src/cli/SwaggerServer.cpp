@@ -4,6 +4,7 @@
 #include "trx/ast/Statements.h"
 #include "trx/parsing/ParserDriver.h"
 #include "trx/runtime/Interpreter.h"
+#include "trx/runtime/ThreadPool.h"
 #include "trx/diagnostics/DiagnosticEngine.h"
 
 #include <algorithm>
@@ -17,6 +18,7 @@
 #include <filesystem>
 #include <iostream>
 #include <map>
+#include <mutex>
 #include <netinet/in.h>
 #include <set>
 #include <optional>
@@ -929,6 +931,9 @@ int runSwaggerServer(const std::vector<std::filesystem::path> &sourcePaths, Serv
     std::cout << "Swagger playground available at http://localhost:" << options.port << "/" << std::endl;
     std::cout << "Press Ctrl+C to stop the server" << std::endl;
 
+    ThreadPool threadPool(options.threadCount);
+    std::mutex interpreterMutex;
+
     while (!g_stopServer.load()) {
         sockaddr_in clientAddr{};
         socklen_t clientLen = sizeof(clientAddr);
@@ -941,40 +946,43 @@ int runSwaggerServer(const std::vector<std::filesystem::path> &sourcePaths, Serv
             break;
         }
 
-        HttpRequest request;
-        if (!readHttpRequest(clientFd, request)) {
-            ::close(clientFd);
-            continue;
-        }
-
-        HttpResponse response;
-        if (request.method == "OPTIONS") {
-            response = handleOptions(request);
-        } else if (request.path == "/") {
-            response.status = 200;
-            response.contentType = "text/html; charset=utf-8";
-            response.body = swaggerIndex;
-        } else if (request.path == "/swagger.json") {
-            response.status = 200;
-            response.contentType = "application/json";
-            response.body = swaggerSpec;
-        } else if (request.path == "/procedures") {
-            response.status = 200;
-            response.contentType = "application/json";
-            response.body = proceduresPayload;
-        } else {
-            // Check if path matches a procedure
-            std::string procName = request.path.substr(1); // remove leading /
-            const auto procIt = procedureLookup.find(procName);
-            if (procIt != procedureLookup.end()) {
-                response = handleExecuteProcedure(request, procIt->second, interpreter);
-            } else {
-                response = makeErrorResponse(404, "Route not found");
+        threadPool.enqueueTask([clientFd, &procedureLookup, &interpreter, &interpreterMutex, &swaggerIndex, &swaggerSpec, &proceduresPayload]() {
+            HttpRequest request;
+            if (!readHttpRequest(clientFd, request)) {
+                ::close(clientFd);
+                return;
             }
-        }
 
-        sendHttpResponse(clientFd, response);
-        ::close(clientFd);
+            HttpResponse response;
+            if (request.method == "OPTIONS") {
+                response = handleOptions(request);
+            } else if (request.path == "/") {
+                response.status = 200;
+                response.contentType = "text/html; charset=utf-8";
+                response.body = swaggerIndex;
+            } else if (request.path == "/swagger.json") {
+                response.status = 200;
+                response.contentType = "application/json";
+                response.body = swaggerSpec;
+            } else if (request.path == "/procedures") {
+                response.status = 200;
+                response.contentType = "application/json";
+                response.body = proceduresPayload;
+            } else {
+                // Check if path matches a procedure
+                std::string procName = request.path.substr(1); // remove leading /
+                const auto procIt = procedureLookup.find(procName);
+                if (procIt != procedureLookup.end()) {
+                    std::lock_guard<std::mutex> lock(interpreterMutex);
+                    response = handleExecuteProcedure(request, procIt->second, interpreter);
+                } else {
+                    response = makeErrorResponse(404, "Route not found");
+                }
+            }
+
+            sendHttpResponse(clientFd, response);
+            ::close(clientFd);
+        });
     }
 
     ::close(serverFd);
