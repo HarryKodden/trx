@@ -130,6 +130,45 @@ bool validateSwitchProcedure(const trx::ast::ProcedureDecl &procedure) {
     return true;
 }
 
+bool validateForProcedure(const trx::ast::ProcedureDecl &procedure) {
+    if (!expect(!procedure.body.empty(), "iterating procedure has no statements")) {
+        return false;
+    }
+
+    const auto *forStmt = std::get_if<trx::ast::ForStatement>(&procedure.body.front().node);
+    if (!expect(forStmt != nullptr, "iterating first statement is not FOR")) {
+        return false;
+    }
+
+    // Check loop variable
+    if (!expect(forStmt->loopVar.path.size() == 1, "iterating loop variable path length")) {
+        return false;
+    }
+    if (!expect(forStmt->loopVar.path[0].identifier == "item", "iterating loop variable name")) {
+        return false;
+    }
+
+    // Check collection (should be an array literal)
+    const auto *arrayLiteral = std::get_if<trx::ast::ArrayLiteralExpression>(&forStmt->collection->node);
+    if (!expect(arrayLiteral != nullptr, "iterating collection is not array literal")) {
+        return false;
+    }
+    if (!expect(arrayLiteral->elements.size() == 3, "iterating array size incorrect")) {
+        return false;
+    }
+
+    // Check body (should have one assignment)
+    if (!expect(forStmt->body.size() == 1, "iterating body size incorrect")) {
+        return false;
+    }
+    const auto *assignment = std::get_if<trx::ast::AssignmentStatement>(&forStmt->body.front().node);
+    if (!expect(assignment != nullptr, "iterating body statement not assignment")) {
+        return false;
+    }
+
+    return true;
+}
+
 bool runControlStatementTests() {
     constexpr const char *source = R"TRX(
         TYPE SAMPLE {
@@ -164,6 +203,12 @@ bool runControlStatementTests() {
                 }
             }
         }
+
+        FUNCTION iterating(sample: SAMPLE): SAMPLE {
+            FOR item IN [1, 2, 3] {
+                output.RESULT := output.RESULT + item;
+            }
+        }
     )TRX";
 
     trx::parsing::ParserDriver driver;
@@ -187,6 +232,12 @@ bool runControlStatementTests() {
     const auto *switching = findProcedure(driver.context().module(), "switching");
     if (!expect(switching != nullptr, "switching procedure not found") ||
         !validateSwitchProcedure(*switching)) {
+        return false;
+    }
+
+    const auto *iterating = findProcedure(driver.context().module(), "iterating");
+    if (!expect(iterating != nullptr, "iterating procedure not found") ||
+        !validateForProcedure(*iterating)) {
         return false;
     }
 

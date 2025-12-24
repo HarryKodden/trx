@@ -17,6 +17,21 @@
 #include <cstdlib>
 #include <string>
 #include <sstream>
+#include <curl/curl.h>
+#include <map>
+
+// Callback function for curl to write response data
+static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
+    ((std::string*)userp)->append((char*)contents, size * nmemb);
+    return size * nmemb;
+}
+
+// Helper function to convert JsonValue to string
+static std::string jsonValueToString(const trx::runtime::JsonValue& value) {
+    std::stringstream ss;
+    ss << value;
+    return ss.str();
+}
 
 namespace trx::runtime {
 
@@ -252,13 +267,147 @@ JsonValue evaluateFunctionCall(const trx::ast::FunctionCallExpression &call, Exe
         JsonValue config = evaluateExpression(call.arguments[0], context);
         if (!config.isObject()) throw std::runtime_error("http_request argument must be an object");
 
-        // For now, return a mock response
-        // TODO: Implement actual HTTP client
-        JsonValue::Object response;
-        response["status"] = JsonValue(200.0);
-        response["headers"] = JsonValue(JsonValue::Object{{"content-type", JsonValue("application/json")}});
-        response["body"] = JsonValue(JsonValue::Object{{"message", JsonValue("HTTP request not yet implemented")}});
-        return JsonValue(response);
+        // Extract configuration
+        const auto& configObj = config.asObject();
+        
+        // Required: method and url
+        if (configObj.find("method") == configObj.end()) throw std::runtime_error("http_request config must include 'method'");
+        if (configObj.find("url") == configObj.end()) throw std::runtime_error("http_request config must include 'url'");
+        
+        std::string method = configObj.at("method").asString();
+        std::string url = configObj.at("url").asString();
+        
+        // Optional: headers, body, timeout
+        std::map<std::string, std::string> headers;
+        std::string requestBody;
+        long timeout = 30L; // default 30 seconds
+        
+        if (configObj.find("headers") != configObj.end() && configObj.at("headers").isObject()) {
+            const auto& headersObj = configObj.at("headers").asObject();
+            for (const auto& [key, value] : headersObj) {
+                headers[key] = value.asString();
+            }
+        }
+        
+        if (configObj.find("body") != configObj.end()) {
+            requestBody = jsonValueToString(configObj.at("body"));
+        }
+        
+        if (configObj.find("timeout") != configObj.end()) {
+            timeout = static_cast<long>(configObj.at("timeout").asNumber());
+        }
+
+        // Initialize curl
+        CURL* curl = curl_easy_init();
+        if (!curl) throw std::runtime_error("Failed to initialize HTTP client");
+
+        std::string responseBody;
+        std::string responseHeaders;
+        long responseCode = 0;
+        char errorBuffer[CURL_ERROR_SIZE];
+        errorBuffer[0] = 0;
+
+        try {
+            // Set URL
+            curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+            
+            // Set method
+            if (method == "GET") {
+                curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+            } else if (method == "POST") {
+                curl_easy_setopt(curl, CURLOPT_POST, 1L);
+                if (!requestBody.empty()) {
+                    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, requestBody.c_str());
+                }
+            } else if (method == "PUT") {
+                curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT");
+                if (!requestBody.empty()) {
+                    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, requestBody.c_str());
+                }
+            } else if (method == "DELETE") {
+                curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
+            } else if (method == "PATCH") {
+                curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PATCH");
+                if (!requestBody.empty()) {
+                    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, requestBody.c_str());
+                }
+            } else if (method == "HEAD") {
+                curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
+            } else if (method == "OPTIONS") {
+                curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "OPTIONS");
+            } else {
+                curl_easy_cleanup(curl);
+                throw std::runtime_error("Unsupported HTTP method: " + method);
+            }
+
+            // Set headers
+            struct curl_slist* headerList = nullptr;
+            for (const auto& [key, value] : headers) {
+                std::string header = key + ": " + value;
+                headerList = curl_slist_append(headerList, header.c_str());
+            }
+            if (headerList) {
+                curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headerList);
+            }
+
+            // Set callbacks
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseBody);
+            
+            // Set timeout
+            curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout);
+            
+            // Set error buffer
+            curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errorBuffer);
+            
+            // Don't verify SSL certificates for now (in production, this should be configurable)
+            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+
+            // Perform request
+            CURLcode res = curl_easy_perform(curl);
+            
+            if (res != CURLE_OK) {
+                std::string errorMsg = errorBuffer[0] ? errorBuffer : curl_easy_strerror(res);
+                curl_easy_cleanup(curl);
+                if (headerList) curl_slist_free_all(headerList);
+                throw std::runtime_error("HTTP request failed: " + errorMsg);
+            }
+
+            // Get response code
+            curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &responseCode);
+
+            // Cleanup
+            curl_easy_cleanup(curl);
+            if (headerList) curl_slist_free_all(headerList);
+
+            // Parse response body as JSON if possible
+            JsonValue responseBodyJson;
+            if (!responseBody.empty() && (responseBody[0] == '{' || responseBody[0] == '[')) {
+                try {
+                    // For now, store as string - TRX can parse JSON at runtime if needed
+                    responseBodyJson = JsonValue(responseBody);
+                } catch (...) {
+                    // If anything fails, treat as string
+                    responseBodyJson = JsonValue(responseBody);
+                }
+            } else {
+                // Not JSON, treat as string
+                responseBodyJson = JsonValue(responseBody);
+            }
+
+            // Build response
+            JsonValue::Object response;
+            response["status"] = JsonValue(static_cast<double>(responseCode));
+            response["headers"] = JsonValue(JsonValue::Object{{"content-type", JsonValue("application/json")}});
+            response["body"] = responseBodyJson;
+            
+            return JsonValue(response);
+            
+        } catch (...) {
+            curl_easy_cleanup(curl);
+            throw;
+        }
     }
     // For user-defined procedures
     const auto *proc = context.interpreter.getProcedure(call.functionName);
@@ -651,6 +800,18 @@ void executeWhile(const trx::ast::WhileStatement &whileStmt, ExecutionContext &c
     }
 }
 
+void executeFor(const trx::ast::ForStatement &forStmt, ExecutionContext &context) {
+    JsonValue collection = evaluateExpression(forStmt.collection, context);
+    if (!std::holds_alternative<std::vector<JsonValue>>(collection.data)) {
+        throw std::runtime_error("FOR loop collection must be an array");
+    }
+    const auto& arr = std::get<std::vector<JsonValue>>(collection.data);
+    for (const auto& item : arr) {
+        resolveVariableTarget(forStmt.loopVar, context) = item;
+        executeStatements(forStmt.body, context);
+    }
+}
+
 void executeBlock(const trx::ast::BlockStatement &block, ExecutionContext &context) {
     executeStatements(block.statements, context);
 }
@@ -964,6 +1125,7 @@ void executeStatement(const trx::ast::Statement &statement, ExecutionContext &co
             [&](const trx::ast::TryCatchStatement &tryCatchStmt) { executeTryCatch(tryCatchStmt, context); },
             [&](const trx::ast::IfStatement &ifStmt) { executeIf(ifStmt, context); },
             [&](const trx::ast::WhileStatement &whileStmt) { executeWhile(whileStmt, context); },
+            [&](const trx::ast::ForStatement &forStmt) { executeFor(forStmt, context); },
             [&](const trx::ast::BlockStatement &block) { executeBlock(block, context); },
             [&](const trx::ast::SwitchStatement &switchStmt) { executeSwitch(switchStmt, context); },
             [&](const trx::ast::SortStatement &sortStmt) { executeSort(sortStmt, context); },

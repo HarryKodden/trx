@@ -10,6 +10,9 @@ pkg_check_modules(ODBC odbc)
 # Find PostgreSQL (optional)
 pkg_check_modules(POSTGRESQL libpq)
 
+# Find curl (required for HTTP client)
+find_package(CURL REQUIRED)
+
 find_package(BISON 3.7 REQUIRED)
 find_package(FLEX REQUIRED)
 
@@ -110,6 +113,7 @@ endif()
 if(POSTGRESQL_SUPPORTED)
     target_link_libraries(trx_core PRIVATE ${POSTGRESQL_LIBRARIES})
 endif()
+target_link_libraries(trx_core PRIVATE CURL::libcurl)
 
 add_executable(trx_compiler
   cli/main.cpp

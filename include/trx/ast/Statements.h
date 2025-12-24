@@ -124,6 +124,12 @@ struct BlockStatement {
     StatementList statements;
 };
 
+struct ForStatement {
+    VariableExpression loopVar;
+    ExpressionPtr collection;
+    StatementList body;
+};
+
 struct Statement {
     using Node = std::variant<TraceStatement,
                               ExpressionStatement,
@@ -140,7 +146,8 @@ struct Statement {
                               WhileStatement,
                               SwitchStatement,
                               SortStatement,
-                              BlockStatement>;
+                              BlockStatement,
+                              ForStatement>;
     Node node;
     SourceLocation location{};
 };

@@ -169,3 +169,18 @@ add_test(
   NAME HttpTest
   COMMAND trx_http_test
 )
+
+add_executable(trx_thread_pool_test
+  runtime/TestUtils.h
+  runtime/ThreadPoolTest.cpp
+)
+
+target_link_libraries(trx_thread_pool_test
+  PRIVATE
+    trx_core
+)
+
+add_test(
+  NAME ThreadPoolTest
+  COMMAND trx_thread_pool_test
+)

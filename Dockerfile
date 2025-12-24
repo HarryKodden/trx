@@ -17,6 +17,7 @@ RUN apt-get update \
        libpq-dev \
        unixodbc-dev \
        pkg-config \
+       libcurl4-openssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace

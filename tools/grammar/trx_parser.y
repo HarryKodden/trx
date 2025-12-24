@@ -409,7 +409,7 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 %token <text> IDENT STRING PATH SQL_TEXT SQL_VARIABLE
 %token <number> NUMBER
 %token INCLUDE CONSTANT FUNCTION PROCEDURE TABLE PRIMARY KEY NULL_K TYPE FROM VAR LIST
-%token IF ELSE WHILE SWITCH CASE DEFAULT CALL TRY CATCH THROW RETURN
+%token IF ELSE WHILE FOR IN SWITCH CASE DEFAULT CALL TRY CATCH THROW RETURN
 %token EXEC_SQL
 %token ASSIGN
 %token AND OR NOT TRUE FALSE
@@ -418,7 +418,7 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 %token DATE TIME JSON
 %token SQLCODE TIMESTAMP WEEK WEEKDAY
 %token HTTP GET POST PUT DELETE PATCH HEAD OPTIONS
-%token HEADERS BODY METHOD URL TIMEOUT
+%token HEADERS BODY METHOD TIMEOUT
 %token LBRACE RBRACE LBRACKET RBRACKET LPAREN RPAREN COMMA SEMICOLON
 
 %type <text> identifier
@@ -427,7 +427,7 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 %type <text> include_target
 %type <text> key
 %type <ptr> fields field_def
-%type <ptr> procedure_body block statement_list statement assignment_statement variable_declaration_statement throw_statement return_statement try_catch_statement if_statement else_clause while_statement switch_statement case_clauses case_clause default_clause sql_statement expression_statement arguments sql_chunks sql_chunk
+%type <ptr> procedure_body block statement_list statement assignment_statement variable_declaration_statement throw_statement return_statement try_catch_statement if_statement else_clause while_statement for_statement switch_statement case_clauses case_clause default_clause sql_statement expression_statement arguments sql_chunks sql_chunk
 %type <ptr> format_decl
 %type <ptr> variable expression variable_reference
 %type <ptr> logical_or_expression logical_and_expression equality_expression relational_expression additive_expression multiplicative_expression unary_expression primary_expression builtin literal object_properties array_elements
@@ -867,6 +867,10 @@ statement
         {
                 $$ = $1;
         }
+    | for_statement
+        {
+                $$ = $1;
+        }
     | switch_statement
         {
                 $$ = $1;
@@ -1066,6 +1070,26 @@ while_statement
                     node.condition = std::move(*condition);
                     node.body = std::move(*body);
                     delete condition;
+                    delete body;
+                    stmt->node = std::move(node);
+                    $$ = stmt;
+            }
+        ;
+
+for_statement
+        : FOR variable IN expression block
+            {
+                    auto stmt = new trx::ast::Statement();
+                    stmt->location = makeLocation(driver, @1);
+                    auto loopVar = variableFrom($2);
+                    auto collection = expressionFrom($4);
+                    auto body = statementListFrom($5);
+                    trx::ast::ForStatement node;
+                    node.loopVar = std::move(*loopVar);
+                    node.collection = std::move(*collection);
+                    node.body = std::move(*body);
+                    delete loopVar;
+                    delete collection;
                     delete body;
                     stmt->node = std::move(node);
                     $$ = stmt;

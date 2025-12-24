@@ -99,6 +99,8 @@ PROCEDURE       { return PROCEDURE; }
 [Ii][Ff] { return IF; }
 [Ee][Ll][Ss][Ee] { return ELSE; }
 [Ww][Hh][Ii][Ll][Ee] { return WHILE; }
+[Ff][Oo][Rr] { return FOR; }
+[Ii][Nn] { return IN; }
 [Ss][Ww][Ii][Tt][Cc][Hh] { return SWITCH; }
 [Cc][Aa][Ss][Ee] { return CASE; }
 [Dd][Ee][Ff][Aa][Uu][Ll][Tt] { return DEFAULT; }
@@ -137,7 +139,6 @@ PROCEDURE       { return PROCEDURE; }
 [Hh][Ee][Aa][Dd][Ee][Rr][Ss] { return HEADERS; }
 [Bb][Oo][Dd][Yy] { return BODY; }
 [Mm][Ee][Tt][Hh][Oo][Dd] { return METHOD; }
-[Uu][Rr][Ll] { return URL; }
 [Tt][Ii][Mm][Ee][Oo][Uu][Tt] { return TIMEOUT; }
 
 "{"             { return LBRACE; }
