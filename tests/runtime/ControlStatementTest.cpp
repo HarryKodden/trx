@@ -137,22 +137,22 @@ bool runControlStatementTests() {
             RESULT INTEGER;
         }
 
-        FUNCTION branching(SAMPLE): SAMPLE {
-            IF input.VALUE > 0 {
-                output.RESULT := input.VALUE;
+        FUNCTION branching(sample: SAMPLE): SAMPLE {
+            IF sample.VALUE > 0 {
+                output.RESULT := sample.VALUE;
             } ELSE {
                 output.RESULT := 0;
             }
         }
 
-        FUNCTION looping(SAMPLE): SAMPLE {
-            WHILE input.VALUE > 0 {
+        FUNCTION looping(sample: SAMPLE): SAMPLE {
+            WHILE sample.VALUE > 0 {
                 output.RESULT := output.RESULT + 1;
             }
         }
 
-        FUNCTION switching(SAMPLE): SAMPLE {
-            SWITCH input.VALUE {
+        FUNCTION switching(sample: SAMPLE): SAMPLE {
+            SWITCH sample.VALUE {
                 CASE 0 {
                     output.RESULT := 0;
                 }

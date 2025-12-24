@@ -31,7 +31,7 @@ public:
     void addVariableDeclarationStatement(ast::VariableDeclarationStatement varDecl);
     void addStatement(ast::Statement statement);
 
-    [[nodiscard]] ast::ParameterDecl makeParameter(std::string name, const ast::SourceLocation &location);
+    [[nodiscard]] ast::ParameterDecl makeParameter(std::string name, std::string typeName, const ast::SourceLocation &location);
     void finalize();
 
 private:

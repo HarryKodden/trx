@@ -17,8 +17,8 @@ bool runCopyProcedureTest() {
             HOME ADDRESS;
         }
 
-        FUNCTION copy_customer(CUSTOMER): CUSTOMER {
-            output := input;
+        FUNCTION copy_customer(customer: CUSTOMER): CUSTOMER {
+            output := customer;
             RETURN output;
         }
     )TRX";

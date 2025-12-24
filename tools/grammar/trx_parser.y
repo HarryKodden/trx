@@ -422,7 +422,7 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 %token LBRACE RBRACE LBRACKET RBRACKET LPAREN RPAREN COMMA SEMICOLON
 
 %type <text> identifier
-%type <text> input_type
+%type <ptr> input_type
 %type <text> type_name
 %type <text> include_target
 %type <text> key
@@ -763,12 +763,12 @@ function_decl
             procedure.name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)};
 
             if ($4) {
-                procedure.input = driver.context().makeParameter(std::string($4), makeLocation(driver, @4));
-                std::free($4);
+                procedure.input = *static_cast<trx::ast::ParameterDecl*>($4);
+                delete static_cast<trx::ast::ParameterDecl*>($4);
             }
 
             if ($7) {
-                procedure.output = driver.context().makeParameter(std::string($7), makeLocation(driver, @7));
+                procedure.output = driver.context().makeParameter("", std::string($7), makeLocation(driver, @7));
                 std::free($7);
             }
 
@@ -790,8 +790,8 @@ procedure_decl
             procedure.name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)};
 
             if ($4) {
-                procedure.input = driver.context().makeParameter(std::string($4), makeLocation(driver, @4));
-                std::free($4);
+                procedure.input = *static_cast<trx::ast::ParameterDecl*>($4);
+                delete static_cast<trx::ast::ParameterDecl*>($4);
             }
 
             auto body = statementListFrom($6);
@@ -1572,9 +1572,14 @@ input_type
       {
           $$ = nullptr;
       }
-    | type_name
+    | identifier ':' type_name
       {
-          $$ = $1;
+          auto param = new trx::ast::ParameterDecl();
+          param->name = {.name = $1 ? std::string($1) : std::string{}, .location = makeLocation(driver, @1)};
+          param->type = {.name = $3 ? std::string($3) : std::string{}, .location = makeLocation(driver, @3)};
+          $$ = param;
+          std::free($1);
+          std::free($3);
       }
 
 type_name

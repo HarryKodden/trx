@@ -23,7 +23,7 @@ bool runBuiltinTest() {
                 },
                 "tags": ["developer", "json", "test"]
             };
-            return result;
+            RETURN result;
         }
 
         PROCEDURE test_builtins() {

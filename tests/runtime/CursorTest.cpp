@@ -54,7 +54,7 @@ bool runCursorTest() {
             EXEC SQL CLOSE json_cursor;
 
             trace("Total rows in JSON list: " + length(results));
-            return results;
+            RETURN results;
         }
 
         PROCEDURE test_cursor() {

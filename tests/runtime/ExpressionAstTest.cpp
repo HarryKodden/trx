@@ -29,7 +29,7 @@ bool validateNumericExpression(const trx::ast::ProcedureDecl &procedure) {
     const auto *leftVar = std::get_if<trx::ast::VariableExpression>(&multiplyExpr->lhs->node);
     if (!expect(leftVar != nullptr, "numeric_case lhs is not variable") ||
         !expect(leftVar->path.size() == 2, "numeric_case variable path not two segments") ||
-        !expect(leftVar->path[0].identifier == "input", "numeric_case variable missing input segment") ||
+        !expect(leftVar->path[0].identifier == "sample", "numeric_case variable missing sample segment") ||
         !expect(leftVar->path[1].identifier == "VALUE", "numeric_case variable missing VALUE segment")) {
         return false;
     }
@@ -80,7 +80,7 @@ bool validateBooleanExpression(const trx::ast::ProcedureDecl &procedure) {
     const auto *leftVar = std::get_if<trx::ast::VariableExpression>(&greaterExpr->lhs->node);
     if (!expect(leftVar != nullptr, "boolean_case comparison lhs is not variable") ||
         !expect(leftVar->path.size() == 2, "boolean_case lhs variable path not two segments") ||
-        !expect(leftVar->path[0].identifier == "input", "boolean_case lhs variable missing input segment") ||
+        !expect(leftVar->path[0].identifier == "sample", "boolean_case lhs variable missing sample segment") ||
         !expect(leftVar->path[1].identifier == "VALUE", "boolean_case lhs variable missing VALUE segment")) {
         return false;
     }
@@ -106,7 +106,7 @@ bool validateBooleanExpression(const trx::ast::ProcedureDecl &procedure) {
     const auto *equalVar = std::get_if<trx::ast::VariableExpression>(&equalExpr->lhs->node);
     if (!expect(equalVar != nullptr, "boolean_case equality lhs is not variable") ||
         !expect(equalVar->path.size() == 2, "boolean_case equality variable path not two segments") ||
-        !expect(equalVar->path[0].identifier == "input", "boolean_case equality variable missing input segment") ||
+        !expect(equalVar->path[0].identifier == "sample", "boolean_case equality variable missing sample segment") ||
         !expect(equalVar->path[1].identifier == "VALUE", "boolean_case equality variable missing VALUE segment")) {
         return false;
     }
@@ -184,19 +184,19 @@ bool runExpressionAstTests() {
             TEXT CHAR(32);
         }
 
-        FUNCTION numeric_case(SAMPLE): SAMPLE {
-            output.RESULT := input.VALUE * 2 + 5;
+        FUNCTION numeric_case(sample: SAMPLE): SAMPLE {
+            output.RESULT := sample.VALUE * 2 + 5;
         }
 
-        FUNCTION boolean_case(SAMPLE): SAMPLE {
-            output.FLAG := input.VALUE > 10 AND NOT (input.VALUE = 0);
+        FUNCTION boolean_case(sample: SAMPLE): SAMPLE {
+            output.FLAG := sample.VALUE > 10 AND NOT (sample.VALUE = 0);
         }
 
-        FUNCTION bool_literal_case(SAMPLE): SAMPLE {
+        FUNCTION bool_literal_case(sample: SAMPLE): SAMPLE {
             output.FLAG := TRUE OR FALSE;
         }
 
-        FUNCTION text_case(SAMPLE): SAMPLE {
+        FUNCTION text_case(sample: SAMPLE): SAMPLE {
             output.TEXT := "constant";
         }
     )TRX";

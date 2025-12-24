@@ -11,8 +11,8 @@ bool runSwitchStatementTest() {
             VALUE INTEGER;
         }
 
-        FUNCTION test_switch(INPUT_TYPE): INPUT_TYPE {
-            SWITCH input.VALUE {
+        FUNCTION test_switch(input_type: INPUT_TYPE): INPUT_TYPE {
+            SWITCH input_type.VALUE {
                 CASE 1 {
                     output.VALUE := 10;
                 }

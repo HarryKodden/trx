@@ -99,8 +99,8 @@ void ParserContext::addStatement(ast::Statement statement) {
     module_.statements.emplace_back(std::move(statement));
 }
 
-ast::ParameterDecl ParserContext::makeParameter(std::string name, const ast::SourceLocation &location) {
-    ast::ParameterDecl parameter{.type = {.name = std::move(name), .location = location}};
+ast::ParameterDecl ParserContext::makeParameter(std::string name, std::string typeName, const ast::SourceLocation &location) {
+    ast::ParameterDecl parameter{.name = {.name = std::move(name), .location = location}, .type = {.name = std::move(typeName), .location = location}};
 
     // Check if it's a built-in type
     static const std::unordered_set<std::string> builtinTypes = {

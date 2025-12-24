@@ -31,6 +31,7 @@ struct ExecutionContext {
     std::optional<JsonValue> returnValue;
     bool isGlobal{false};
     bool isFunction{false};
+    std::optional<std::string> outputType;
 };
 
 JsonValue evaluateExpression(const trx::ast::ExpressionPtr &expression, ExecutionContext &context);
@@ -740,6 +741,28 @@ void executeReturn(const trx::ast::ReturnStatement &returnStmt, ExecutionContext
     if (!context.isFunction) {
         throw std::runtime_error("Return statement not allowed in procedures");
     }
+    
+    // For functions, the return value must be a local existing variable
+    if (std::holds_alternative<trx::ast::VariableExpression>(returnStmt.value->node)) {
+        const auto &varExpr = std::get<trx::ast::VariableExpression>(returnStmt.value->node);
+        // Check if it's a simple variable (not a path)
+        if (varExpr.path.size() == 1 && !varExpr.path[0].subscript) {
+            const std::string &varName = varExpr.path[0].identifier;
+            if (context.variables.find(varName) == context.variables.end()) {
+                throw std::runtime_error("Return variable '" + varName + "' does not exist");
+            }
+            // For functions, check type compatibility with output type
+            if (context.outputType) {
+                // TODO: Implement type checking based on context.outputType
+                // For now, just ensure the variable exists and is local
+            }
+        } else {
+            throw std::runtime_error("Return statement must reference a simple local variable");
+        }
+    } else {
+        throw std::runtime_error("Return statement must reference a local variable");
+    }
+    
     JsonValue val = evaluateExpression(returnStmt.value, context);
     throw ReturnException(val);
 }
@@ -1044,7 +1067,7 @@ Interpreter::Interpreter(const trx::ast::Module &module, std::unique_ptr<Databas
     }
 
     // Execute global statements (variable declarations and function calls)
-    ExecutionContext globalContext{*this, {}, false, std::nullopt, true};
+    ExecutionContext globalContext{*this, {}, false, std::nullopt, true, false, std::nullopt};
     for (const auto &decl : module.declarations) {
         if (std::holds_alternative<ast::VariableDeclarationStatement>(decl)) {
             executeVariableDeclaration(std::get<ast::VariableDeclarationStatement>(decl), globalContext);
@@ -1104,14 +1127,20 @@ std::optional<JsonValue> Interpreter::execute(const std::string &procedureName, 
         dbDriver_->beginTransaction();
     }
 
-    ExecutionContext context{*this, {}, false, std::nullopt, false, procedure->output.has_value()};
-    context.variables.emplace("input", input);
+    ExecutionContext context{*this, {}, false, std::nullopt, false, procedure->output.has_value(), std::nullopt};
+    if (procedure->input) {
+        context.variables.emplace(procedure->input->name.name, input);
+    }
     if (procedure->output) {
-        context.variables.emplace("output", JsonValue::object());
+        context.outputType = procedure->output->type.name;
     }
 
     try {
         executeStatements(procedure->body, context);
+        // For functions, execution without return is an error
+        if (procedure->output) {
+            throw std::runtime_error("Function must return a value");
+        }
         // Commit on successful completion
         if (alreadyInTransaction) {
             dbDriver_->executeSql("RELEASE SAVEPOINT " + savepointName);
@@ -1119,12 +1148,18 @@ std::optional<JsonValue> Interpreter::execute(const std::string &procedureName, 
             dbDriver_->commitTransaction();
         }
     } catch (const ReturnException &ret) {
-        context.variables["output"] = ret.value;
-        // Commit on successful completion (even with return)
-        if (alreadyInTransaction) {
-            dbDriver_->executeSql("RELEASE SAVEPOINT " + savepointName);
+        // For functions, validate that the return value is a variable
+        if (procedure->output) {
+            // The return validation is already done in executeReturn
+            // Commit on successful completion (even with return)
+            if (alreadyInTransaction) {
+                dbDriver_->executeSql("RELEASE SAVEPOINT " + savepointName);
+            } else {
+                dbDriver_->commitTransaction();
+            }
+            return ret.value;
         } else {
-            dbDriver_->commitTransaction();
+            throw std::runtime_error("Return statement not allowed in procedures");
         }
     } catch (...) {
         // Rollback on any exception

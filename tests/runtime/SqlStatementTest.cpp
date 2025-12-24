@@ -23,7 +23,7 @@ bool validateSqlProcedure(const trx::ast::ProcedureDecl &procedure) {
     }
     if (!expect(selectStmt->sql == "SELECT NAME FROM CUSTOMERS WHERE ID = ?", "unexpected SELECT SQL text") ||
         !expect(selectStmt->hostVariables.size() == 1, "SELECT host variable count mismatch") ||
-        !expectVariablePath(selectStmt->hostVariables.front(), {"input", "VALUE"})) {
+        !expectVariablePath(selectStmt->hostVariables.front(), {"sample", "VALUE"})) {
         return false;
     }
 
@@ -33,7 +33,7 @@ bool validateSqlProcedure(const trx::ast::ProcedureDecl &procedure) {
     }
     if (!expect(deleteStmt->sql == "DELETE FROM CUSTOMERS WHERE ID = ?", "unexpected DELETE SQL text") ||
         !expect(deleteStmt->hostVariables.size() == 1, "DELETE host variable count mismatch") ||
-        !expectVariablePath(deleteStmt->hostVariables.front(), {"input", "VALUE"})) {
+        !expectVariablePath(deleteStmt->hostVariables.front(), {"sample", "VALUE"})) {
         return false;
     }
 
@@ -45,8 +45,8 @@ bool validateSqlProcedure(const trx::ast::ProcedureDecl &procedure) {
         !expect(updateStmt->hostVariables.size() == 2, "UPDATE host variable count mismatch")) {
         return false;
     }
-    if (!expectVariablePath(updateStmt->hostVariables[0], {"input", "NAME"}) ||
-        !expectVariablePath(updateStmt->hostVariables[1], {"input", "VALUE"})) {
+    if (!expectVariablePath(updateStmt->hostVariables[0], {"sample", "NAME"}) ||
+        !expectVariablePath(updateStmt->hostVariables[1], {"sample", "VALUE"})) {
         return false;
     }
 
@@ -74,7 +74,7 @@ bool validateCursorProcedure(const trx::ast::ProcedureDecl &procedure) {
         !expect(declareStmt->identifier == "mycursor", "DECLARE cursor name mismatch") ||
         !expect(declareStmt->sql == "DECLARE mycursor CURSOR FOR SELECT NAME, VALUE FROM CUSTOMERS WHERE ID = ?", "DECLARE SQL text mismatch") ||
         !expect(declareStmt->hostVariables.size() == 1, "DECLARE host variable count mismatch") ||
-        !expectVariablePath(declareStmt->hostVariables.front(), {"input", "VALUE"})) {
+        !expectVariablePath(declareStmt->hostVariables.front(), {"sample", "VALUE"})) {
         return false;
     }
 
@@ -124,14 +124,14 @@ bool runSqlStatementTests() {
             RESULT INTEGER;
         }
 
-        FUNCTION sql_examples(SAMPLE): SAMPLE {
-            EXEC SQL SELECT NAME FROM CUSTOMERS WHERE ID = :input.VALUE;
-            EXEC SQL DELETE FROM CUSTOMERS WHERE ID = :input.VALUE;
-            EXEC SQL UPDATE CUSTOMERS SET NAME = :input.NAME WHERE ID = :input.VALUE;
+        FUNCTION sql_examples(sample: SAMPLE): SAMPLE {
+            EXEC SQL SELECT NAME FROM CUSTOMERS WHERE ID = :sample.VALUE;
+            EXEC SQL DELETE FROM CUSTOMERS WHERE ID = :sample.VALUE;
+            EXEC SQL UPDATE CUSTOMERS SET NAME = :sample.NAME WHERE ID = :sample.VALUE;
         }
 
-        FUNCTION cursor_examples(SAMPLE): SAMPLE {
-            EXEC SQL DECLARE mycursor CURSOR FOR SELECT NAME, VALUE FROM CUSTOMERS WHERE ID = :input.VALUE;
+        FUNCTION cursor_examples(sample: SAMPLE): SAMPLE {
+            EXEC SQL DECLARE mycursor CURSOR FOR SELECT NAME, VALUE FROM CUSTOMERS WHERE ID = :sample.VALUE;
             EXEC SQL OPEN mycursor;
             EXEC SQL FETCH mycursor INTO :output.NAME, :output.RESULT;
             EXEC SQL CLOSE mycursor;

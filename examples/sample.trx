@@ -21,35 +21,39 @@ PROCEDURE inner() {
 
 TYPE PERSON FROM TABLE person;
 
-FUNCTION process_employee(PERSON) : PERSON {
-    output := input;
+FUNCTION process_employee(employee: PERSON) : PERSON {
+    VAR result := employee;
 
-    IF input.ACTIVE {
-        output.SALARY := input.SALARY * 1.1;
+    IF employee.ACTIVE {
+        result.SALARY := employee.SALARY * 1.1;
     } ELSE {
-        output.SALARY := 0;
+        result.SALARY := 0;
     }
 
     inner();
 
-    exec sql declare c1 cursor for select person_id, department from employee where person_id = input.id;
+    exec sql declare c1 cursor for select person_id, department from employee where person_id = employee.id;
     exec sql open c1;
         var employee from table employee;
         exec sql fetch c1 into :employee.person_id, :employee.department;
 
     exec sql close c1;
     
-    WHILE output.SALARY < 50000 {
-        output.SALARY := output.SALARY + 1000;
+    WHILE result.SALARY < 50000 {
+        result.SALARY := result.SALARY + 1000;
     }
 
-    IF input.ACTIVE {
-        output.SALARY := output.SALARY * 1.15;
+    IF employee.ACTIVE {
+        result.SALARY := result.SALARY * 1.15;
     }
+
+    RETURN result;
 }
 
-FUNCTION calculate_bonus(PERSON) : PERSON {
-    output.SALARY := input.SALARY * 1.1;
+FUNCTION calculate_bonus(person: PERSON) : PERSON {
+    VAR result := person;
+    result.SALARY := person.SALARY * 1.1;
+    RETURN result;
 }
 
 PROCEDURE test_lists() {

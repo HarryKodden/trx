@@ -22,6 +22,7 @@ struct ConstantDecl {
 };
 
 struct ParameterDecl {
+    Identifier name;
     Identifier type;
 };
 

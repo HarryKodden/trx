@@ -40,15 +40,12 @@ TYPE EMPLOYEE FROM TABLE employee;
 
 CONSTANT MAX_AGE 100;
 
-FUNCTION calculate_bonus(PERSON): PERSON {
-    IF input.AGE > 50 THEN {
-        output.ID := input.ID;
-        output.NAME := input.NAME;
-        output.AGE := input.AGE + 10;
-    } ELSE {
-        output := input;
+FUNCTION calculate_bonus(person: PERSON): PERSON {
+    VAR result := person;
+    IF person.AGE > 50 THEN {
+        result.AGE := person.AGE + 10;
     }
-    RETURN output;
+    RETURN result;
 }
 
 PROCEDURE process_data() {
@@ -141,7 +138,7 @@ PROCEDURE api_call_example() {
     }
 }
 
-PROCEDURE get_user_data() {
+FUNCTION get_user_data(): JSON {
     VAR request_config JSON := {
         "method": "GET",
         "url": "https://jsonplaceholder.typicode.com/users/1",
@@ -155,11 +152,12 @@ PROCEDURE get_user_data() {
     
     IF response.status = 200 {
         VAR user JSON := response.body;
-        output := {
+        VAR result JSON := {
             "name": user.name,
             "email": user.email,
             "company": user.company.name
         };
+        RETURN result;
     } ELSE {
         THROW "Failed to fetch user data";
     }
