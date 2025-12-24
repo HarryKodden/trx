@@ -12,6 +12,7 @@
 #include <arpa/inet.h>
 #include <cerrno>
 #include <cctype>
+#include <chrono>
 #include <csignal>
 #include <cstdio>
 #include <cstring>
@@ -37,6 +38,17 @@ namespace trx::cli {
 namespace {
 
 std::atomic<bool> g_stopServer{false};
+
+struct Metrics {
+    std::atomic<size_t> totalRequests{0};
+    std::atomic<size_t> activeRequests{0};
+    std::atomic<size_t> errorRequests{0};
+    std::mutex durationMutex;
+    std::vector<double> requestDurations; // in milliseconds
+    double averageDuration = 0.0;
+};
+
+Metrics g_metrics;
 
 void handleSignal(int signum) {
     if (signum == SIGINT) {
@@ -947,8 +959,13 @@ int runSwaggerServer(const std::vector<std::filesystem::path> &sourcePaths, Serv
         }
 
         threadPool.enqueueTask([clientFd, &procedureLookup, &interpreter, &interpreterMutex, &swaggerIndex, &swaggerSpec, &proceduresPayload]() {
+            auto start = std::chrono::high_resolution_clock::now();
+            g_metrics.activeRequests++;
+            g_metrics.totalRequests++;
+
             HttpRequest request;
             if (!readHttpRequest(clientFd, request)) {
+                g_metrics.activeRequests--;
                 ::close(clientFd);
                 return;
             }
@@ -968,6 +985,26 @@ int runSwaggerServer(const std::vector<std::filesystem::path> &sourcePaths, Serv
                 response.status = 200;
                 response.contentType = "application/json";
                 response.body = proceduresPayload;
+            } else if (request.path == "/metrics") {
+                response.status = 200;
+                response.contentType = "text/plain; version=0.0.4; charset=utf-8";
+                std::ostringstream oss;
+                oss << "# HELP trx_total_requests Total number of requests processed\n";
+                oss << "# TYPE trx_total_requests counter\n";
+                oss << "trx_total_requests " << g_metrics.totalRequests.load() << "\n\n";
+
+                oss << "# HELP trx_active_requests Number of currently active requests\n";
+                oss << "# TYPE trx_active_requests gauge\n";
+                oss << "trx_active_requests " << g_metrics.activeRequests.load() << "\n\n";
+
+                oss << "# HELP trx_error_requests Number of requests that resulted in errors\n";
+                oss << "# TYPE trx_error_requests counter\n";
+                oss << "trx_error_requests " << g_metrics.errorRequests.load() << "\n\n";
+
+                oss << "# HELP trx_average_duration_ms Average request duration in milliseconds\n";
+                oss << "# TYPE trx_average_duration_ms gauge\n";
+                oss << "trx_average_duration_ms " << g_metrics.averageDuration << "\n";
+                response.body = oss.str();
             } else {
                 // Check if path matches a procedure
                 std::string procName = request.path.substr(1); // remove leading /
@@ -980,7 +1017,25 @@ int runSwaggerServer(const std::vector<std::filesystem::path> &sourcePaths, Serv
                 }
             }
 
+            if (response.status >= 400) {
+                g_metrics.errorRequests++;
+            }
+
+            auto end = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+            {
+                std::lock_guard<std::mutex> lock(g_metrics.durationMutex);
+                g_metrics.requestDurations.push_back(duration);
+                if (g_metrics.requestDurations.size() > 1000) {
+                    g_metrics.requestDurations.erase(g_metrics.requestDurations.begin());
+                }
+                double sum = 0.0;
+                for (auto d : g_metrics.requestDurations) sum += d;
+                g_metrics.averageDuration = sum / g_metrics.requestDurations.size();
+            }
+
             sendHttpResponse(clientFd, response);
+            g_metrics.activeRequests--;
             ::close(clientFd);
         });
     }
