@@ -262,17 +262,17 @@ JsonValue evaluateFunctionCall(const trx::ast::FunctionCallExpression &call, Exe
         std::cout << "TRACE: " << arg << std::endl;
         return JsonValue(nullptr); // Logging functions return null
     }
-    if (call.functionName == "http_request") {
-        if (call.arguments.size() != 1) throw std::runtime_error("http_request function takes 1 argument");
+    if (call.functionName == "http") {
+        if (call.arguments.size() != 1) throw std::runtime_error("http function takes 1 argument");
         JsonValue config = evaluateExpression(call.arguments[0], context);
-        if (!config.isObject()) throw std::runtime_error("http_request argument must be an object");
+        if (!config.isObject()) throw std::runtime_error("http argument must be an object");
 
         // Extract configuration
         const auto& configObj = config.asObject();
         
         // Required: method and url
-        if (configObj.find("method") == configObj.end()) throw std::runtime_error("http_request config must include 'method'");
-        if (configObj.find("url") == configObj.end()) throw std::runtime_error("http_request config must include 'url'");
+        if (configObj.find("method") == configObj.end()) throw std::runtime_error("http config must include 'method'");
+        if (configObj.find("url") == configObj.end()) throw std::runtime_error("http config must include 'url'");
         
         std::string method = configObj.at("method").asString();
         std::string url = configObj.at("url").asString();

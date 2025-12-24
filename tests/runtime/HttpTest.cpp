@@ -18,7 +18,7 @@ bool runHttpTest() {
                 "timeout": 10
             };
 
-            var response JSON := http_request(request_config);
+            var response JSON := http(request_config);
             trace('GET request completed');
             trace('Status: ' + response.status);
 
@@ -46,7 +46,7 @@ bool runHttpTest() {
                 "timeout": 10
             };
 
-            var response JSON := http_request(request_config);
+            var response JSON := http(request_config);
             trace('POST request completed');
             trace('Status: ' + response.status);
 
@@ -72,7 +72,7 @@ bool runHttpTest() {
                 "timeout": 10
             };
 
-            var response JSON := http_request(request_config);
+            var response JSON := http(request_config);
             trace('PUT request completed');
             trace('Status: ' + response.status);
 
@@ -89,7 +89,7 @@ bool runHttpTest() {
                 "timeout": 10
             };
 
-            var response JSON := http_request(request_config);
+            var response JSON := http(request_config);
             trace('DELETE request completed');
             trace('Status: ' + response.status);
 
@@ -106,7 +106,7 @@ bool runHttpTest() {
                 "timeout": 10
             };
 
-            var response JSON := http_request(request_config);
+            var response JSON := http(request_config);
             trace('Query params request completed');
             trace('Status: ' + response.status);
 
@@ -125,7 +125,7 @@ bool runHttpTest() {
                 "timeout": 5
             };
 
-            var response JSON := http_request(request_config);
+            var response JSON := http(request_config);
             trace('Error handling test completed');
             trace('Status: ' + response.status);
 
@@ -139,7 +139,7 @@ bool runHttpTest() {
                 "timeout": 2  // 2 second timeout - should succeed
             };
 
-            var response JSON := http_request(request_config);
+            var response JSON := http(request_config);
             trace('Timeout test completed');
             trace('Status: ' + response.status);
 

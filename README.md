@@ -9,13 +9,13 @@ TRX provides a comprehensive set of features for transaction processing:
 ### Core Language Features
 - **Strong Typing**: Record types, lists, and built-in types (INTEGER, CHAR, BOOLEAN, DECIMAL, etc.)
 - **Automatic Type Definition**: Generate record types automatically from existing database table schemas using `TYPE name FROM TABLE table_name`
-- **Variables and Constants**: Global and local variable declarations with type safety
+- **Variables and Constants**: Global and local variable declarations with type safety (explicit declarations required)
 - **Functions and Procedures**: Modular code organization with input/output parameters
 - **Control Flow**: IF-ELSE, WHILE loops, and SWITCH statements with CASE/DEFAULT
 - **Exception Handling**: TRY-CATCH blocks and THROW statements for error management
 - **SQL Integration**: Direct SQL execution with host variables, cursors, and transaction management
 - **HTTP API Integration**: Built-in HTTP client for making REST API calls with JSON request/response handling
-- **Built-in Functions**: String manipulation (substr), list operations (len, append), logging (debug, info, error), HTTP requests (http_request)
+- **Built-in Functions**: String manipulation (substr), list operations (len, append), logging (debug, info, error), HTTP requests (http)
 - **Modules**: INCLUDE statements for code organization across multiple files (allows duplicate identical type definitions)
 
 ### Runtime Features
@@ -80,7 +80,7 @@ PROCEDURE send_notification() {
         "timeout": 30
     };
     
-    VAR response JSON := http_request(request_config);
+    VAR response JSON := http(request_config);
     
     IF response.status = 200 {
         trace("Notification sent successfully");
@@ -129,7 +129,7 @@ PROCEDURE api_call_example() {
         "timeout": 10
     };
     
-    VAR response JSON := http_request(request_config);
+    VAR response JSON := http(request_config);
     
     IF response.status = 201 {
         trace("Post created with ID: " + response.body.id);
@@ -148,7 +148,7 @@ FUNCTION get_user_data(): JSON {
         "timeout": 5
     };
     
-    VAR response JSON := http_request(request_config);
+    VAR response JSON := http(request_config);
     
     IF response.status = 200 {
         VAR user JSON := response.body;
@@ -181,7 +181,7 @@ FUNCTION get_user_data(): JSON {
 - **Statements**: Assignment (:=), SQL execution, HTTP requests, control flow, calls
 - **Expressions**: Arithmetic, comparison, logical, function calls, field access, JSON objects
 - **SQL**: EXEC_SQL, cursors (DECLARE, OPEN, FETCH, CLOSE), host variables (:var)
-- **HTTP**: http_request() function with JSON configuration for REST API calls
+- **HTTP**: http() function with JSON configuration for REST API calls
 
 ## Usage
 
@@ -261,16 +261,15 @@ The server provides:
 ### Quick Build
 
 ```bash
-# Configure
+# Using Make (recommended)
+make build        # Configure and build
+make test         # Run tests
+make examples     # Verify examples compile
+
+# Or using CMake directly
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-
-# Build
 cmake --build build
-
-# Test
 cd build && ctest --output-on-failure
-
-# Run
 ./src/trx_compiler examples/sample.trx
 ```
 
@@ -298,13 +297,12 @@ docker run --rm -v "$PWD":/workspace -p 8080:8080 trx-runtime serve /workspace/e
 
 See the `examples/` directory for sample TRX programs:
 
-- `sample.trx`: Basic record processing and SQL operations
+- `sample.trx`: Comprehensive example showing records, functions, procedures, SQL operations, and control flow
 - `init.trx`: Database initialization and automatic type definition from tables
-- `cursor_example.trx`: Cursor operations for reading multiple records into JSON output
-- `exception_test.trx`: Error handling examples
-- `global_test.trx`: Global variables and functions
-- `test_function.trx`: Function definitions and calls
-- `http_demo.trx`: HTTP API integration examples with GET and POST requests
+- `exception_test.trx`: Error handling with TRY/CATCH and THROW statements
+- `global_test.trx`: Global variables and function definitions
+- `json_test.trx`: JSON data structures and manipulation
+- `http_demo.trx`: HTTP API integration with GET and POST requests
 
 ## Architecture
 

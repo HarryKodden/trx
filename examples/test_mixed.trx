@@ -1,1 +1,0 @@
-VAR mixed := ["hello", 42, true, {"nested": "object"}];

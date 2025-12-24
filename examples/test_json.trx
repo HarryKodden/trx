@@ -1,5 +1,0 @@
-VAR x := 42;
-
-PROCEDURE test_json() {
-    return x;
-}

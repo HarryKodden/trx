@@ -1,1 +1,0 @@
-PROCEDURE main() { VAR obj := {"key": "value"}; trace(obj.key); }

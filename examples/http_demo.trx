@@ -2,7 +2,7 @@ INCLUDE init.trx;
 
 PROCEDURE demo_http() {
     // Example HTTP GET request
-    var get_response := http_request({
+    var get_response := http({
         "method": "GET",
         "url": "https://httpbin.org/get",
         "headers": {
@@ -16,7 +16,7 @@ PROCEDURE demo_http() {
     trace("GET Response: " + get_response.body);
 
     // Example HTTP POST request
-    var post_response := http_request({
+    var post_response := http({
         "method": "POST",
         "url": "https://httpbin.org/post",
         "headers": {
@@ -36,10 +36,4 @@ PROCEDURE demo_http() {
 
     trace("POST Response Status: " + post_response.status);
     trace("POST Response: " + post_response.body);
-
-    output := {
-        "get_status": get_response.status,
-        "post_status": post_response.status,
-        "demo": "HTTP requests completed"
-    };
 }

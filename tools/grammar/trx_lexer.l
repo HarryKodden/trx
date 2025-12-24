@@ -128,7 +128,6 @@ PROCEDURE       { return PROCEDURE; }
 [Tt][Ii][Mm][Ee][Ss][Tt][Aa][Mm][Pp] { return TIMESTAMP; }
 [Ww][Ee][Ee][Kk][Dd][Aa][Yy] { return WEEKDAY; }
 [Ss][Qq][Ll][Cc][Oo][Dd][Ee] { return SQLCODE; }
-[Hh][Tt][Tt][Pp] { return HTTP; }
 [Gg][Ee][Tt] { return GET; }
 [Pp][Oo][Ss][Tt] { return POST; }
 [Pp][Uu][Tt] { return PUT; }

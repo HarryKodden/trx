@@ -1,1 +1,0 @@
-PROCEDURE main() { trace("hello"); }

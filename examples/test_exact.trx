@@ -1,1 +1,0 @@
-VAR config := {"database": "sqlite", "port": 8080, "enabled": true};

@@ -1,4 +1,4 @@
-.PHONY: all configure compile build lint test run serve docker-images clean
+.PHONY: all configure compile build lint test examples run serve docker-images clean
 
 DOCKER_DEV?=trx-development
 DOCKER_RUNTIME?=trx-runtime
@@ -29,6 +29,9 @@ lint: docker-dev
 
 test: docker-dev
 	$(DOCKER_DEV_SHELL) -lc 'cd /workspace/build && ctest --output-on-failure'
+
+examples: docker-dev
+	$(DOCKER_DEV_SHELL) -lc 'cd /workspace && for file in examples/*.trx; do echo -n "$$file: "; ./build/src/trx_compiler "$$file" >/dev/null 2>&1 && echo "OK" || echo "FAILED"; done'
 
 run: build
 	$(DOCKER_DEV_SHELL) -lc './build/src/trx_compiler examples/sample.trx'

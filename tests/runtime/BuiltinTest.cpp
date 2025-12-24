@@ -69,7 +69,7 @@ bool runBuiltinTest() {
             // No output assignment needed for procedure
         }
 
-        PROCEDURE test_http_request() {
+        PROCEDURE test_http() {
             // Test HTTP request functionality
             var request_config JSON := {
                 "method": "GET",
@@ -81,7 +81,7 @@ bool runBuiltinTest() {
                 "timeout": 10
             };
 
-            var response JSON := http_request(request_config);
+            var response JSON := http(request_config);
             trace('HTTP request completed with status: ' + response.status);
 
             // No output assignment needed for procedure
@@ -109,10 +109,10 @@ bool runBuiltinTest() {
         return false;
     }
 
-    std::cout << "Executing test_http_request...\n";
-    const auto outputOpt2 = interpreter.execute("test_http_request", input);
+    std::cout << "Executing test_http...\n";
+    const auto outputOpt2 = interpreter.execute("test_http", input);
     if (outputOpt2) {
-        std::cerr << "test_http_request procedure should not return a value\n";
+        std::cerr << "test_http procedure should not return a value\n";
         return false;
     }
 
