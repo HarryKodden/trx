@@ -5,12 +5,13 @@
 namespace trx::test {
 
 bool validateNumericExpression(const trx::ast::ProcedureDecl &procedure) {
-    if (!expect(!procedure.body.empty(), "numeric_case missing body")) {
+    if (!expect(procedure.body.size() == 3, "numeric_case should have 3 statements")) {
         return false;
     }
 
-    const auto *assignment = std::get_if<trx::ast::AssignmentStatement>(&procedure.body.front().node);
-    if (!expect(assignment != nullptr, "numeric_case first statement is not assignment")) {
+    // Skip variable declaration, check assignment
+    const auto *assignment = std::get_if<trx::ast::AssignmentStatement>(&procedure.body[1].node);
+    if (!expect(assignment != nullptr, "numeric_case second statement is not assignment")) {
         return false;
     }
 
@@ -56,12 +57,13 @@ bool validateNumericExpression(const trx::ast::ProcedureDecl &procedure) {
 }
 
 bool validateBooleanExpression(const trx::ast::ProcedureDecl &procedure) {
-    if (!expect(!procedure.body.empty(), "boolean_case missing body")) {
+    if (!expect(procedure.body.size() == 3, "boolean_case should have 3 statements")) {
         return false;
     }
 
-    const auto *assignment = std::get_if<trx::ast::AssignmentStatement>(&procedure.body.front().node);
-    if (!expect(assignment != nullptr, "boolean_case first statement is not assignment")) {
+    // Skip variable declaration, check assignment
+    const auto *assignment = std::get_if<trx::ast::AssignmentStatement>(&procedure.body[1].node);
+    if (!expect(assignment != nullptr, "boolean_case second statement is not assignment")) {
         return false;
     }
 
@@ -121,12 +123,13 @@ bool validateBooleanExpression(const trx::ast::ProcedureDecl &procedure) {
 }
 
 bool validateBooleanLiteralExpression(const trx::ast::ProcedureDecl &procedure) {
-    if (!expect(!procedure.body.empty(), "bool_literal_case missing body")) {
+    if (!expect(procedure.body.size() == 3, "bool_literal_case should have 3 statements")) {
         return false;
     }
 
-    const auto *assignment = std::get_if<trx::ast::AssignmentStatement>(&procedure.body.front().node);
-    if (!expect(assignment != nullptr, "bool_literal_case first statement is not assignment")) {
+    // Skip variable declaration, check assignment
+    const auto *assignment = std::get_if<trx::ast::AssignmentStatement>(&procedure.body[1].node);
+    if (!expect(assignment != nullptr, "bool_literal_case second statement is not assignment")) {
         return false;
     }
 
@@ -152,12 +155,13 @@ bool validateBooleanLiteralExpression(const trx::ast::ProcedureDecl &procedure) 
 }
 
 bool validateStringLiteralExpression(const trx::ast::ProcedureDecl &procedure) {
-    if (!expect(!procedure.body.empty(), "text_case missing body")) {
+    if (!expect(procedure.body.size() == 3, "text_case should have 3 statements")) {
         return false;
     }
 
-    const auto *assignment = std::get_if<trx::ast::AssignmentStatement>(&procedure.body.front().node);
-    if (!expect(assignment != nullptr, "text_case first statement is not assignment")) {
+    // Skip variable declaration, check assignment
+    const auto *assignment = std::get_if<trx::ast::AssignmentStatement>(&procedure.body[1].node);
+    if (!expect(assignment != nullptr, "text_case second statement is not assignment")) {
         return false;
     }
 
@@ -185,19 +189,27 @@ bool runExpressionAstTests() {
         }
 
         FUNCTION numeric_case(sample: SAMPLE): SAMPLE {
-            output.RESULT := sample.VALUE * 2 + 5;
+            var result SAMPLE := sample;
+            result.RESULT := sample.VALUE * 2 + 5;
+            RETURN result;
         }
 
         FUNCTION boolean_case(sample: SAMPLE): SAMPLE {
-            output.FLAG := sample.VALUE > 10 AND NOT (sample.VALUE = 0);
+            var result SAMPLE := sample;
+            result.FLAG := sample.VALUE > 10 AND NOT (sample.VALUE = 0);
+            RETURN result;
         }
 
         FUNCTION bool_literal_case(sample: SAMPLE): SAMPLE {
-            output.FLAG := TRUE OR FALSE;
+            var result SAMPLE := sample;
+            result.FLAG := TRUE OR FALSE;
+            RETURN result;
         }
 
         FUNCTION text_case(sample: SAMPLE): SAMPLE {
-            output.TEXT := "constant";
+            var result SAMPLE := sample;
+            result.TEXT := "constant";
+            RETURN result;
         }
     )TRX";
 

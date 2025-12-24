@@ -5,12 +5,22 @@
 namespace trx::test {
 
 bool validateIfProcedure(const trx::ast::ProcedureDecl &procedure) {
-    if (!expect(!procedure.body.empty(), "branching procedure has no statements")) {
+    if (!expect(procedure.body.size() == 3, "branching procedure should have 3 statements")) {
         return false;
     }
 
-    const auto *ifStmt = std::get_if<trx::ast::IfStatement>(&procedure.body.front().node);
-    if (!expect(ifStmt != nullptr, "branching first statement is not IF")) {
+    // Check variable declaration: var result SAMPLE := sample;
+    const auto *varDecl = std::get_if<trx::ast::VariableDeclarationStatement>(&procedure.body[0].node);
+    if (!expect(varDecl != nullptr, "branching first statement is not variable declaration")) {
+        return false;
+    }
+    if (!expect(varDecl->name.name == "result", "branching variable name incorrect")) {
+        return false;
+    }
+
+    // Check IF statement
+    const auto *ifStmt = std::get_if<trx::ast::IfStatement>(&procedure.body[1].node);
+    if (!expect(ifStmt != nullptr, "branching second statement is not IF")) {
         return false;
     }
 
@@ -51,16 +61,32 @@ bool validateIfProcedure(const trx::ast::ProcedureDecl &procedure) {
         return false;
     }
 
+    // Check RETURN statement
+    const auto *returnStmt = std::get_if<trx::ast::ReturnStatement>(&procedure.body[2].node);
+    if (!expect(returnStmt != nullptr, "branching third statement is not RETURN")) {
+        return false;
+    }
+    if (!expect(returnStmt->value != nullptr, "branching return statement has no value")) {
+        return false;
+    }
+
     return true;
 }
 
 bool validateWhileProcedure(const trx::ast::ProcedureDecl &procedure) {
-    if (!expect(!procedure.body.empty(), "looping procedure has no statements")) {
+    if (!expect(procedure.body.size() == 3, "looping procedure should have 3 statements")) {
         return false;
     }
 
-    const auto *whileStmt = std::get_if<trx::ast::WhileStatement>(&procedure.body.front().node);
-    if (!expect(whileStmt != nullptr, "looping first statement is not WHILE")) {
+    // Check variable declaration: var result SAMPLE := sample;
+    const auto *varDecl = std::get_if<trx::ast::VariableDeclarationStatement>(&procedure.body[0].node);
+    if (!expect(varDecl != nullptr, "looping first statement is not variable declaration")) {
+        return false;
+    }
+
+    // Check WHILE statement
+    const auto *whileStmt = std::get_if<trx::ast::WhileStatement>(&procedure.body[1].node);
+    if (!expect(whileStmt != nullptr, "looping second statement is not WHILE")) {
         return false;
     }
 
@@ -78,16 +104,29 @@ bool validateWhileProcedure(const trx::ast::ProcedureDecl &procedure) {
         return false;
     }
 
+    // Check RETURN statement
+    const auto *returnStmt = std::get_if<trx::ast::ReturnStatement>(&procedure.body[2].node);
+    if (!expect(returnStmt != nullptr, "looping third statement is not RETURN")) {
+        return false;
+    }
+
     return true;
 }
 
 bool validateSwitchProcedure(const trx::ast::ProcedureDecl &procedure) {
-    if (!expect(!procedure.body.empty(), "switching procedure has no statements")) {
+    if (!expect(procedure.body.size() == 3, "switching procedure should have 3 statements")) {
         return false;
     }
 
-    const auto *switchStmt = std::get_if<trx::ast::SwitchStatement>(&procedure.body.front().node);
-    if (!expect(switchStmt != nullptr, "switching first statement is not SWITCH")) {
+    // Check variable declaration: var result SAMPLE := sample;
+    const auto *varDecl = std::get_if<trx::ast::VariableDeclarationStatement>(&procedure.body[0].node);
+    if (!expect(varDecl != nullptr, "switching first statement is not variable declaration")) {
+        return false;
+    }
+
+    // Check SWITCH statement
+    const auto *switchStmt = std::get_if<trx::ast::SwitchStatement>(&procedure.body[1].node);
+    if (!expect(switchStmt != nullptr, "switching second statement is not SWITCH")) {
         return false;
     }
 
@@ -127,16 +166,29 @@ bool validateSwitchProcedure(const trx::ast::ProcedureDecl &procedure) {
         return false;
     }
 
+    // Check RETURN statement
+    const auto *returnStmt = std::get_if<trx::ast::ReturnStatement>(&procedure.body[2].node);
+    if (!expect(returnStmt != nullptr, "switching third statement is not RETURN")) {
+        return false;
+    }
+
     return true;
 }
 
 bool validateForProcedure(const trx::ast::ProcedureDecl &procedure) {
-    if (!expect(!procedure.body.empty(), "iterating procedure has no statements")) {
+    if (!expect(procedure.body.size() == 3, "iterating procedure should have 3 statements")) {
         return false;
     }
 
-    const auto *forStmt = std::get_if<trx::ast::ForStatement>(&procedure.body.front().node);
-    if (!expect(forStmt != nullptr, "iterating first statement is not FOR")) {
+    // Check variable declaration: var result SAMPLE := sample;
+    const auto *varDecl = std::get_if<trx::ast::VariableDeclarationStatement>(&procedure.body[0].node);
+    if (!expect(varDecl != nullptr, "iterating first statement is not variable declaration")) {
+        return false;
+    }
+
+    // Check FOR statement
+    const auto *forStmt = std::get_if<trx::ast::ForStatement>(&procedure.body[1].node);
+    if (!expect(forStmt != nullptr, "iterating second statement is not FOR")) {
         return false;
     }
 
@@ -166,6 +218,12 @@ bool validateForProcedure(const trx::ast::ProcedureDecl &procedure) {
         return false;
     }
 
+    // Check RETURN statement
+    const auto *returnStmt = std::get_if<trx::ast::ReturnStatement>(&procedure.body[2].node);
+    if (!expect(returnStmt != nullptr, "iterating third statement is not RETURN")) {
+        return false;
+    }
+
     return true;
 }
 
@@ -177,37 +235,45 @@ bool runControlStatementTests() {
         }
 
         FUNCTION branching(sample: SAMPLE): SAMPLE {
+            var result SAMPLE := sample;
             IF sample.VALUE > 0 {
-                output.RESULT := sample.VALUE;
+                result.RESULT := sample.VALUE;
             } ELSE {
-                output.RESULT := 0;
+                result.RESULT := 0;
             }
+            RETURN result;
         }
 
         FUNCTION looping(sample: SAMPLE): SAMPLE {
+            var result SAMPLE := sample;
             WHILE sample.VALUE > 0 {
-                output.RESULT := output.RESULT + 1;
+                result.RESULT := result.RESULT + 1;
             }
+            RETURN result;
         }
 
         FUNCTION switching(sample: SAMPLE): SAMPLE {
+            var result SAMPLE := sample;
             SWITCH sample.VALUE {
                 CASE 0 {
-                    output.RESULT := 0;
+                    result.RESULT := 0;
                 }
                 CASE 1 {
-                    output.RESULT := 1;
+                    result.RESULT := 1;
                 }
                 DEFAULT {
-                    output.RESULT := -1;
+                    result.RESULT := -1;
                 }
             }
+            RETURN result;
         }
 
         FUNCTION iterating(sample: SAMPLE): SAMPLE {
+            var result SAMPLE := sample;
             FOR item IN [1, 2, 3] {
-                output.RESULT := output.RESULT + item;
+                result.RESULT := result.RESULT + item;
             }
+            RETURN result;
         }
     )TRX";
 

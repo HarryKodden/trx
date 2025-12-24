@@ -12,21 +12,22 @@ bool runSwitchStatementTest() {
         }
 
         FUNCTION test_switch(input_type: INPUT_TYPE): INPUT_TYPE {
+            var result INPUT_TYPE := input_type;
             SWITCH input_type.VALUE {
                 CASE 1 {
-                    output.VALUE := 10;
+                    result.VALUE := 10;
                 }
                 CASE 2 {
-                    output.VALUE := 20;
+                    result.VALUE := 20;
                 }
                 CASE 3 {
-                    output.VALUE := 30;
+                    result.VALUE := 30;
                 }
                 DEFAULT {
-                    output.VALUE := -1;
+                    result.VALUE := -1;
                 }
             }
-            RETURN output;
+            RETURN result;
         }
     )TRX";
 

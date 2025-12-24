@@ -18,8 +18,8 @@ bool runCopyProcedureTest() {
         }
 
         FUNCTION copy_customer(customer: CUSTOMER): CUSTOMER {
-            output := customer;
-            RETURN output;
+            var result CUSTOMER := customer;
+            RETURN result;
         }
     )TRX";
 
