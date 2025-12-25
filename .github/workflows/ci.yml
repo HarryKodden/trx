@@ -13,7 +13,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Install build prerequisites
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build flex bison
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build flex bison libsqlite3-dev libpq-dev unixodbc-dev pkg-config libcurl4-openssl-dev
       - name: Configure with warnings-as-errors
         run: cmake -S . -B build/lint -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror"
       - name: Build (lint)
@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Install build prerequisites
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build flex bison
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build flex bison libcurl4-openssl-dev libsqlite3-dev libpq-dev unixodbc-dev pkg-config
       - name: Configure
         run: cmake -S . -B build/default -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
       - name: Build
