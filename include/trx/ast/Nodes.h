@@ -26,11 +26,19 @@ struct ParameterDecl {
     Identifier type;
 };
 
+struct ProcedureConfig {
+    std::optional<std::string> httpMethod;
+    std::vector<std::pair<std::string, std::string>> httpHeaders;
+};
+
 struct ProcedureDecl {
     Identifier name;
     std::optional<ParameterDecl> input;
     std::optional<ParameterDecl> output;
     std::vector<Statement> body;
+    bool isExported{false};
+    std::optional<std::string> httpMethod; // Optional HTTP method override
+    std::vector<std::pair<std::string, std::string>> httpHeaders; // Optional custom headers
 };
 
 struct RecordField {
@@ -69,6 +77,9 @@ struct ExternalProcedureDecl {
     Identifier name;
     std::optional<Identifier> input;
     std::optional<Identifier> output;
+    bool isExported{false};
+    std::optional<std::string> httpMethod; // Optional HTTP method override
+    std::vector<std::pair<std::string, std::string>> httpHeaders; // Optional custom headers
 };
 
 using Declaration = std::variant<IncludeDecl,

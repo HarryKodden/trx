@@ -56,7 +56,7 @@ FUNCTION calculate_bonus(person: PERSON) : PERSON {
     RETURN result;
 }
 
-PROCEDURE test_lists() {
+EXPORT METHOD GET PROCEDURE test_lists() {
     var numbers list(INTEGER);
     var employees list(EMPLOYEE);
 
@@ -74,4 +74,47 @@ PROCEDURE test_lists() {
     append(employees, emp);
 
     trace("Length of employees: " + len(employees));
+}
+
+EXPORT METHOD POST HEADERS {
+    "X-Custom-Header": "CustomValue";
+    "Cache-Control": "no-cache";
+} FUNCTION process_employee(employee: PERSON) : PERSON {
+    VAR result := employee;
+
+    IF employee.ACTIVE {
+        result.SALARY := employee.SALARY * 1.1;
+    } ELSE {
+        result.SALARY := 0;
+    }
+
+    inner();
+
+    exec sql declare c1 cursor for select person_id, department from employee where person_id = employee.id;
+    exec sql open c1;
+        var employee from table employee;
+        exec sql fetch c1 into :employee.person_id, :employee.department;
+
+    exec sql close c1;
+    
+    WHILE result.SALARY < 50000 {
+        result.SALARY := result.SALARY + 1000;
+    }
+
+    IF employee.ACTIVE {
+        result.SALARY := result.SALARY * 1.15;
+    }
+
+    RETURN result;
+}
+
+EXPORT METHOD GET PROCEDURE get_user() {
+    trace("Getting user data");
+}
+
+EXPORT METHOD POST HEADERS {
+    "X-API-Version": "1.0";
+    "X-Custom-Header": "CustomValue";
+} PROCEDURE create_user() {
+    trace("Creating user");
 }

@@ -87,6 +87,7 @@ SQLTEXT      [^\s:;]+
                     return EXEC_SQL;
                 }
 
+EXPORT          { return EXPORT; }
 PROCEDURE       { return PROCEDURE; }
 [Ll][Ii][Ss][Tt] { return LIST; }
 [Ii][Nn][Cc][Ll][Uu][Dd][Ee]  { return INCLUDE; }

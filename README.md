@@ -22,7 +22,7 @@ TRX provides a comprehensive set of features for transaction processing:
 - **Database Connectivity**: Support for SQLite, PostgreSQL, and ODBC connections
 - **Transaction Management**: Automatic transaction handling with rollback on errors
 - **HTTP API Client**: Built-in HTTP client for making REST API calls with JSON serialization
-- **REST API Server**: Built-in HTTP server for exposing procedures as web services
+- **REST API Server**: Built-in HTTP server for exposing **exported** procedures as web services
 - **JSON Serialization**: Automatic conversion between TRX records and JSON
 
 ## Grammar Overview
@@ -65,7 +65,19 @@ PROCEDURE process_data() {
     }
 }
 
-PROCEDURE send_notification() {
+EXPORT PROCEDURE send_notification() {
+    VAR request_config JSON := {
+        "method": "POST",
+        "url": "https://api.example.com/notify",
+        "headers": {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + api_token
+        },
+        "body": {
+            "message": "Processing completed",
+            "timestamp": timestamp
+        },
+        "timeout": 30
     VAR request_config JSON := {
         "method": "POST",
         "url": "https://api.example.com/notify",
@@ -231,7 +243,7 @@ TRX supports multiple database backends:
 
 ### REST API Server
 
-When running in serve mode, TRX automatically generates REST endpoints for each procedure:
+When running in serve mode, TRX automatically generates REST endpoints for each **exported** procedure:
 
 ```bash
 # Start server
@@ -243,10 +255,75 @@ curl -X POST http://localhost:8080/process_employee \
   -d '{"ID": 1, "NAME": "John", "AGE": 30}'
 ```
 
+#### Exporting Procedures
+
+By default, procedures are not exposed via the REST API. To make a procedure available as a web service, use the `EXPORT` keyword:
+
+```trx
+TYPE EmployeeInput {
+    ID INTEGER;
+    NAME CHAR(64);
+}
+
+TYPE EmployeeOutput {
+    ID INTEGER;
+    NAME CHAR(64);
+    BONUS DECIMAL;
+}
+
+PROCEDURE internal_calculation(input: EmployeeInput) : EmployeeOutput {
+    // This procedure is internal only
+    var result EmployeeOutput := { ID: input.ID, NAME: input.NAME, BONUS: 0 };
+    RETURN result;
+}
+
+EXPORT PROCEDURE process_employee(input: EmployeeInput) : EmployeeOutput {
+    // This procedure is exposed via REST API at /process_employee
+    var result EmployeeOutput := internal_calculation(input);
+    result.BONUS := result.ID * 0.1; // 10% bonus
+    RETURN result;
+}
+```
+
+You can customize the HTTP method and response headers for exported procedures:
+
+```trx
+EXPORT METHOD GET PROCEDURE get_employee(id: EmployeeId) : EmployeeOutput {
+    // Exposed as GET /get_employee
+    var result EmployeeOutput := find_employee(id.ID);
+    RETURN result;
+}
+
+EXPORT METHOD POST HEADERS {
+    "X-API-Version": "1.0";
+    "Cache-Control": "no-cache";
+} PROCEDURE create_employee(input: EmployeeInput) : EmployeeOutput {
+    // Exposed as POST /create_employee with custom headers
+    var result EmployeeOutput := create_employee_record(input);
+    RETURN result;
+}
+```
+
+For functions that return data, use `EXPORT ... FUNCTION`:
+
+```trx
+EXPORT METHOD PUT HEADERS {
+    "Content-Type": "application/json";
+} FUNCTION update_employee(id: EmployeeId, input: EmployeeInput) : EmployeeOutput {
+    // Exposed as PUT /update_employee
+    var result EmployeeOutput := update_employee_record(id.ID, input);
+    RETURN result;
+}
+```
+
+Supported HTTP methods: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS`
+
 The server provides:
 - Automatic JSON request/response handling
 - Swagger/OpenAPI documentation at `/swagger.json`
 - Error handling with proper HTTP status codes
+- Custom HTTP methods and response headers
+- Only `EXPORT` procedures are exposed as REST endpoints
 
 ## Building and Testing
 

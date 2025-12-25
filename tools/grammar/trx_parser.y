@@ -409,6 +409,7 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 %token <text> IDENT STRING PATH SQL_TEXT SQL_VARIABLE
 %token <number> NUMBER
 %token INCLUDE CONSTANT FUNCTION PROCEDURE TABLE PRIMARY KEY NULL_K TYPE FROM VAR LIST
+%token EXPORT
 %token IF ELSE WHILE FOR IN SWITCH CASE DEFAULT CALL TRY CATCH THROW RETURN
 %token EXEC_SQL
 %token ASSIGN
@@ -432,6 +433,8 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 %type <ptr> variable expression variable_reference
 %type <ptr> logical_or_expression logical_and_expression equality_expression relational_expression additive_expression multiplicative_expression unary_expression primary_expression builtin literal object_properties array_elements
 %type <number> dimension
+%type <ptr> procedure_config header_list
+%type <text> http_method header_name
 
 %left OR
 %left AND
@@ -757,7 +760,40 @@ format_decl
     ;
 
 function_decl
-    : FUNCTION identifier LPAREN input_type RPAREN ':' type_name procedure_body
+    : EXPORT procedure_config FUNCTION identifier LPAREN input_type RPAREN ':' type_name procedure_body
+        {
+            trx::ast::ProcedureDecl procedure;
+            procedure.name = {.name = $4 ? std::string($4) : std::string{}, .location = makeLocation(driver, @4)};
+            procedure.isExported = true;
+
+            if ($6) {
+                procedure.input = *static_cast<trx::ast::ParameterDecl*>($6);
+                delete static_cast<trx::ast::ParameterDecl*>($6);
+            }
+
+            if ($9) {
+                procedure.output = driver.context().makeParameter("", std::string($9), makeLocation(driver, @9));
+                std::free($9);
+            }
+
+            // Apply configuration from procedure_config
+            auto config = static_cast<trx::ast::ProcedureConfig*>($2);
+            if (config) {
+                procedure.httpMethod = config->httpMethod;
+                procedure.httpHeaders = std::move(config->httpHeaders);
+                delete config;
+            }
+
+            auto body = statementListFrom($10);
+            if (body) {
+                procedure.body = std::move(*body);
+                delete body;
+            }
+
+            driver.context().addProcedure(std::move(procedure));
+            std::free($4);
+        }
+    | FUNCTION identifier LPAREN input_type RPAREN ':' type_name procedure_body
         {
             trx::ast::ProcedureDecl procedure;
             procedure.name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)};
@@ -784,7 +820,35 @@ function_decl
     ;
 
 procedure_decl
-    : PROCEDURE identifier LPAREN input_type RPAREN procedure_body
+    : EXPORT procedure_config PROCEDURE identifier LPAREN input_type RPAREN procedure_body
+        {
+            trx::ast::ProcedureDecl procedure;
+            procedure.name = {.name = $4 ? std::string($4) : std::string{}, .location = makeLocation(driver, @4)};
+            procedure.isExported = true;
+
+            if ($6) {
+                procedure.input = *static_cast<trx::ast::ParameterDecl*>($6);
+                delete static_cast<trx::ast::ParameterDecl*>($6);
+            }
+
+            // Apply configuration from procedure_config
+            auto config = static_cast<trx::ast::ProcedureConfig*>($2);
+            if (config) {
+                procedure.httpMethod = config->httpMethod;
+                procedure.httpHeaders = std::move(config->httpHeaders);
+                delete config;
+            }
+
+            auto body = statementListFrom($8);
+            if (body) {
+                procedure.body = std::move(*body);
+                delete body;
+            }
+
+            driver.context().addProcedure(std::move(procedure));
+            std::free($4);
+        }
+    | PROCEDURE identifier LPAREN input_type RPAREN procedure_body
         {
             trx::ast::ProcedureDecl procedure;
             procedure.name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)};
@@ -803,6 +867,80 @@ procedure_decl
             driver.context().addProcedure(std::move(procedure));
             std::free($2);
         }
+    ;
+
+procedure_config
+    : /* empty */
+      {
+          $$ = new trx::ast::ProcedureConfig();
+      }
+    | METHOD http_method
+      {
+          auto config = new trx::ast::ProcedureConfig();
+          config->httpMethod = std::string($2 ? $2 : "");
+          std::free($2);
+          $$ = config;
+      }
+    | HEADERS LBRACE header_list RBRACE
+      {
+          auto config = new trx::ast::ProcedureConfig();
+          auto headers = static_cast<std::vector<std::pair<std::string, std::string>>*>($3);
+          if (headers) {
+              config->httpHeaders = std::move(*headers);
+              delete headers;
+          }
+          $$ = config;
+      }
+    | METHOD http_method HEADERS LBRACE header_list RBRACE
+      {
+          auto config = new trx::ast::ProcedureConfig();
+          config->httpMethod = std::string($2 ? $2 : "");
+          std::free($2);
+          auto headers = static_cast<std::vector<std::pair<std::string, std::string>>*>($5);
+          if (headers) {
+              config->httpHeaders = std::move(*headers);
+              delete headers;
+          }
+          $$ = config;
+      }
+    ;
+
+http_method
+    : GET { $$ = strdup("GET"); }
+    | POST { $$ = strdup("POST"); }
+    | PUT { $$ = strdup("PUT"); }
+    | DELETE { $$ = strdup("DELETE"); }
+    | PATCH { $$ = strdup("PATCH"); }
+    | HEAD { $$ = strdup("HEAD"); }
+    | OPTIONS { $$ = strdup("OPTIONS"); }
+    ;
+
+header_list
+    : /* empty */
+      {
+          $$ = new std::vector<std::pair<std::string, std::string>>();
+      }
+    | header_list header_name ':' STRING SEMICOLON
+      {
+          auto list = static_cast<std::vector<std::pair<std::string, std::string>>*>($1);
+          std::string key = $2 ? std::string($2) : "";
+          std::string value = $4 ? std::string($4) : "";
+          list->emplace_back(std::move(key), std::move(value));
+          std::free($2);
+          std::free($4);
+          $$ = list;
+      }
+    ;
+
+header_name
+    : identifier
+      {
+          $$ = $1;
+      }
+    | STRING
+      {
+          $$ = $1;
+      }
     ;
 
 procedure_body

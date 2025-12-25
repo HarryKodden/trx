@@ -606,7 +606,11 @@ std::string buildSwaggerSpec(const std::map<std::string, const trx::ast::Procedu
         }
         firstPath = false;
         spec << "\n    \"" << escapeJsonString("/" + name) << "\": {\n";
-        spec << "      \"post\": {\n";
+        
+        // Use custom HTTP method if specified, otherwise default to POST
+        std::string httpMethod = proc->httpMethod.value_or("post");
+        spec << "      \"" << escapeJsonString(httpMethod) << "\": {\n";
+        
         spec << "        \"summary\": \"Execute " << escapeJsonString(name) << " procedure\",\n";
         spec << "        \"requestBody\": {\n";
         spec << "          \"required\": true,\n";
@@ -723,7 +727,9 @@ std::vector<const trx::ast::ProcedureDecl *> collectCallableProcedures(const trx
     std::vector<const trx::ast::ProcedureDecl *> procedures;
     for (const auto &decl : module.declarations) {
         if (const auto *proc = std::get_if<trx::ast::ProcedureDecl>(&decl)) {
-            procedures.push_back(proc);
+            if (proc->isExported) {
+                procedures.push_back(proc);
+            }
         }
     }
     return procedures;
@@ -759,9 +765,12 @@ HttpResponse makeErrorResponse(int status, std::string_view message) {
 HttpResponse handleExecuteProcedure(const HttpRequest &request,
                                    const trx::ast::ProcedureDecl *procedure,
                                    trx::runtime::Interpreter &interpreter) {
-    if (request.method != "POST") {
-        return makeErrorResponse(405, "Only POST supported");
+    // Check HTTP method - use custom method if specified, otherwise default to POST
+    std::string expectedMethod = procedure->httpMethod.value_or("POST");
+    if (request.method != expectedMethod) {
+        return makeErrorResponse(405, "Method " + request.method + " not allowed. Expected " + expectedMethod);
     }
+    
     if (!request.headers.count("content-type") || request.headers.at("content-type").find("application/json") == std::string::npos) {
         return makeErrorResponse(400, "Content-Type must be application/json");
     }
@@ -784,8 +793,14 @@ HttpResponse handleExecuteProcedure(const HttpRequest &request,
             response.contentType = "application/json";
             response.body = serializeJsonValue(output);
             response.extraHeaders.emplace_back("Access-Control-Allow-Origin", "*");
-            response.extraHeaders.emplace_back("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+            response.extraHeaders.emplace_back("Access-Control-Allow-Methods", expectedMethod + ", OPTIONS");
             response.extraHeaders.emplace_back("Access-Control-Allow-Headers", "Content-Type");
+            
+            // Add custom headers from procedure configuration
+            for (const auto &[key, value] : procedure->httpHeaders) {
+                response.extraHeaders.emplace_back(key, value);
+            }
+            
             return response;
         } else {
             // Procedure does not return output
@@ -794,8 +809,14 @@ HttpResponse handleExecuteProcedure(const HttpRequest &request,
             response.contentType = "application/json";
             response.body = "{}";
             response.extraHeaders.emplace_back("Access-Control-Allow-Origin", "*");
-            response.extraHeaders.emplace_back("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+            response.extraHeaders.emplace_back("Access-Control-Allow-Methods", expectedMethod + ", OPTIONS");
             response.extraHeaders.emplace_back("Access-Control-Allow-Headers", "Content-Type");
+            
+            // Add custom headers from procedure configuration
+            for (const auto &[key, value] : procedure->httpHeaders) {
+                response.extraHeaders.emplace_back(key, value);
+            }
+            
             return response;
         }
     } catch (const JsonParseError &error) {

@@ -184,3 +184,18 @@ add_test(
   NAME ThreadPoolTest
   COMMAND trx_thread_pool_test
 )
+
+add_executable(trx_export_test
+  runtime/TestUtils.h
+  runtime/ExportTest.cpp
+)
+
+target_link_libraries(trx_export_test
+  PRIVATE
+    trx_core
+)
+
+add_test(
+  NAME ExportTest
+  COMMAND trx_export_test
+)
