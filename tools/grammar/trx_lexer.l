@@ -149,6 +149,7 @@ PROCEDURE       { return PROCEDURE; }
 ")"             { return RPAREN; }
 ","             { return COMMA; }
 ";"             { return SEMICOLON; }
+"/"             { return SLASH; }
 ":="            { return ASSIGN; }
 "<="            { return LE; }
 ">="            { return GE; }

@@ -1178,7 +1178,7 @@ Interpreter::Interpreter(const trx::ast::Module &module, std::unique_ptr<Databas
     for (const auto &decl : module.declarations) {
         if (std::holds_alternative<ast::ProcedureDecl>(decl)) {
             const auto &proc = std::get<ast::ProcedureDecl>(decl);
-            procedures_[proc.name.name] = &proc;
+            procedures_[proc.name.baseName] = &proc;
         } else if (std::holds_alternative<ast::RecordDecl>(decl)) {
             const auto &record = std::get<ast::RecordDecl>(decl);
             records_[record.name.name] = &record;
@@ -1258,7 +1258,7 @@ Interpreter::Interpreter(const trx::ast::Module &module, std::unique_ptr<Databas
         } else if (std::holds_alternative<ast::ExpressionStatement>(decl)) {
             executeExpression(std::get<ast::ExpressionStatement>(decl), globalContext);
         } else if (std::holds_alternative<ast::ProcedureDecl>(decl)) {
-            procedures_[std::get<ast::ProcedureDecl>(decl).name.name] = &std::get<ast::ProcedureDecl>(decl);
+            procedures_[std::get<ast::ProcedureDecl>(decl).name.baseName] = &std::get<ast::ProcedureDecl>(decl);
         } else if (std::holds_alternative<ast::TableDecl>(decl)) {
             // Handle table declarations if needed
         } else if (std::holds_alternative<ast::RecordDecl>(decl)) {
@@ -1286,6 +1286,10 @@ const trx::ast::RecordDecl* Interpreter::getRecord(const std::string &name) cons
 }
 
 std::optional<JsonValue> Interpreter::execute(const std::string &procedureName, const JsonValue &input) {
+    return execute(procedureName, input, {});
+}
+
+std::optional<JsonValue> Interpreter::execute(const std::string &procedureName, const JsonValue &input, const std::map<std::string, std::string> &pathParams) {
     auto it = procedures_.find(procedureName);
     if (it == procedures_.end()) {
         throw TrxException("Procedure not found: " + procedureName);
@@ -1308,8 +1312,28 @@ std::optional<JsonValue> Interpreter::execute(const std::string &procedureName, 
     ExecutionContext context{*this, {}, false, std::nullopt, false, procedure->output.has_value(), std::nullopt};
     // Note: No longer setting up implicit input/output variables
     
-    // Set up the input parameter if it exists
-    if (procedure->input) {
+    // Bind path parameters to explicit function parameters
+    if (procedure->input && !pathParams.empty()) {
+        // For functions with path parameters, bind path params to explicit params
+        JsonValue paramInput = JsonValue::object();
+        auto &obj = std::get<JsonValue::Object>(paramInput.data);
+        
+        // Copy path parameters
+        for (const auto &[key, value] : pathParams) {
+            obj[key] = JsonValue(value);
+        }
+        
+        // Copy any body parameters
+        if (std::holds_alternative<JsonValue::Object>(input.data)) {
+            const auto &inputObj = std::get<JsonValue::Object>(input.data);
+            for (const auto &[key, value] : inputObj) {
+                obj[key] = value;
+            }
+        }
+        
+        context.variables[procedure->input->name.name] = paramInput;
+    } else if (procedure->input) {
+        // For functions without path parameters, use the input as-is
         context.variables[procedure->input->name.name] = input;
     }
 

@@ -1,4 +1,4 @@
-#include "SwaggerServer.h"
+#include "Server.h"
 
 #include "trx/ast/Nodes.h"
 #include "trx/ast/Statements.h"
@@ -646,7 +646,7 @@ std::string serializeJsonValue(const trx::runtime::JsonValue &value) {
     throw std::runtime_error("Unsupported JsonValue variant");
 }
 
-std::string buildSwaggerSpec(const std::map<std::string, const trx::ast::ProcedureDecl *> &procedureLookup, const std::vector<const trx::ast::RecordDecl *> &records, int port) {
+std::string buildSwaggerSpec(const std::map<std::string, const trx::ast::ProcedureDecl *> &procedureLookup, const std::vector<const trx::ast::RecordDecl *> &records, [[maybe_unused]] int port) {
     std::ostringstream spec;
     spec << R"(
 {
@@ -940,7 +940,7 @@ HttpResponse handleOptions(const HttpRequest &) {
 
 } // anonymous namespace
 
-int runSwaggerServer(const std::vector<std::filesystem::path> &sourcePaths, ServeOptions options) {
+int runServer(const std::vector<std::filesystem::path> &sourcePaths, ServeOptions options) {
 
     std::vector<std::filesystem::path> allSourceFiles;
     for (const auto &sourcePath : sourcePaths) {

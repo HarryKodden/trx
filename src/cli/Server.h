@@ -16,6 +16,6 @@ struct ServeOptions {
     size_t threadCount{std::thread::hardware_concurrency()};
 };
 
-int runSwaggerServer(const std::vector<std::filesystem::path> &sourcePaths, ServeOptions options);
+int runServer(const std::vector<std::filesystem::path> &sourcePaths, ServeOptions options);
 
 } // namespace trx::cli

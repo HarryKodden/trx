@@ -33,7 +33,7 @@ bool expect(bool condition, std::string_view message) {
 const trx::ast::ProcedureDecl *findProcedure(const trx::ast::Module &module, std::string_view name) {
     for (const auto &declaration : module.declarations) {
         if (const auto *procedure = std::get_if<trx::ast::ProcedureDecl>(&declaration)) {
-            if (procedure->name.name == name) {
+            if (procedure->name.baseName == name) {
                 return procedure;
             }
         }

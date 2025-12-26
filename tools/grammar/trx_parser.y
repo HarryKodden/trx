@@ -420,7 +420,7 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 %token SQLCODE TIMESTAMP WEEK WEEKDAY
 %token GET POST PUT DELETE PATCH HEAD OPTIONS
 %token HEADERS BODY METHOD TIMEOUT
-%token LBRACE RBRACE LBRACKET RBRACKET LPAREN RPAREN COMMA SEMICOLON
+%token LBRACE RBRACE LBRACKET RBRACKET LPAREN RPAREN COMMA SEMICOLON SLASH
 
 %type <text> identifier
 %type <ptr> input_type
@@ -435,6 +435,7 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 %type <number> dimension
 %type <ptr> procedure_config header_list
 %type <text> http_method header_name
+%type <ptr> procedure_name path_placeholders
 
 %left OR
 %left AND
@@ -760,10 +761,14 @@ format_decl
     ;
 
 function_decl
-    : EXPORT procedure_config FUNCTION identifier LPAREN input_type RPAREN ':' type_name procedure_body
+    : EXPORT procedure_config FUNCTION procedure_name LPAREN input_type RPAREN ':' type_name procedure_body
         {
             trx::ast::ProcedureDecl procedure;
-            procedure.name = {.name = $4 ? std::string($4) : std::string{}, .location = makeLocation(driver, @4)};
+            auto procName = static_cast<trx::ast::ProcedureName*>($4);
+            if (procName) {
+                procedure.name = std::move(*procName);
+                delete procName;
+            }
             procedure.isExported = true;
 
             if ($6) {
@@ -791,12 +796,15 @@ function_decl
             }
 
             driver.context().addProcedure(std::move(procedure));
-            std::free($4);
         }
-    | FUNCTION identifier LPAREN input_type RPAREN ':' type_name procedure_body
+    | FUNCTION procedure_name LPAREN input_type RPAREN ':' type_name procedure_body
         {
             trx::ast::ProcedureDecl procedure;
-            procedure.name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)};
+            auto procName = static_cast<trx::ast::ProcedureName*>($2);
+            if (procName) {
+                procedure.name = std::move(*procName);
+                delete procName;
+            }
 
             if ($4) {
                 procedure.input = *static_cast<trx::ast::ParameterDecl*>($4);
@@ -815,15 +823,75 @@ function_decl
             }
 
             driver.context().addProcedure(std::move(procedure));
-            std::free($2);
+        }
+    | EXPORT procedure_config FUNCTION procedure_name '(' ')' ':' type_name procedure_body
+        {
+            trx::ast::ProcedureDecl procedure;
+            auto procName = static_cast<trx::ast::ProcedureName*>($4);
+            if (procName) {
+                procedure.name = std::move(*procName);
+                delete procName;
+            }
+            procedure.isExported = true;
+
+            // No input parameters for functions with path parameters
+
+            if ($8) {
+                procedure.output = driver.context().makeParameter("", std::string($8), makeLocation(driver, @8));
+                std::free($8);
+            }
+
+            // Apply configuration from procedure_config
+            auto config = static_cast<trx::ast::ProcedureConfig*>($2);
+            if (config) {
+                procedure.httpMethod = config->httpMethod;
+                procedure.httpHeaders = std::move(config->httpHeaders);
+                delete config;
+            }
+
+            auto body = statementListFrom($9);
+            if (body) {
+                procedure.body = std::move(*body);
+                delete body;
+            }
+
+            driver.context().addProcedure(std::move(procedure));
+        }
+    | FUNCTION procedure_name '(' ')' ':' type_name procedure_body
+        {
+            trx::ast::ProcedureDecl procedure;
+            auto procName = static_cast<trx::ast::ProcedureName*>($2);
+            if (procName) {
+                procedure.name = std::move(*procName);
+                delete procName;
+            }
+
+            // No input parameters
+
+            if ($6) {
+                procedure.output = driver.context().makeParameter("", std::string($6), makeLocation(driver, @6));
+                std::free($6);
+            }
+
+            auto body = statementListFrom($7);
+            if (body) {
+                procedure.body = std::move(*body);
+                delete body;
+            }
+
+            driver.context().addProcedure(std::move(procedure));
         }
     ;
 
 procedure_decl
-    : EXPORT procedure_config PROCEDURE identifier LPAREN input_type RPAREN procedure_body
+    : EXPORT procedure_config PROCEDURE procedure_name LPAREN input_type RPAREN procedure_body
         {
             trx::ast::ProcedureDecl procedure;
-            procedure.name = {.name = $4 ? std::string($4) : std::string{}, .location = makeLocation(driver, @4)};
+            auto procName = static_cast<trx::ast::ProcedureName*>($4);
+            if (procName) {
+                procedure.name = std::move(*procName);
+                delete procName;
+            }
             procedure.isExported = true;
 
             if ($6) {
@@ -846,12 +914,15 @@ procedure_decl
             }
 
             driver.context().addProcedure(std::move(procedure));
-            std::free($4);
         }
-    | PROCEDURE identifier LPAREN input_type RPAREN procedure_body
+    | PROCEDURE procedure_name LPAREN input_type RPAREN procedure_body
         {
             trx::ast::ProcedureDecl procedure;
-            procedure.name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)};
+            auto procName = static_cast<trx::ast::ProcedureName*>($2);
+            if (procName) {
+                procedure.name = std::move(*procName);
+                delete procName;
+            }
 
             if ($4) {
                 procedure.input = *static_cast<trx::ast::ParameterDecl*>($4);
@@ -865,7 +936,6 @@ procedure_decl
             }
 
             driver.context().addProcedure(std::move(procedure));
-            std::free($2);
         }
     ;
 
@@ -902,6 +972,54 @@ procedure_config
               delete headers;
           }
           $$ = config;
+      }
+    ;
+
+procedure_name
+    : identifier
+      {
+          auto procName = new trx::ast::ProcedureName();
+          procName->baseName = std::string($1 ? $1 : "");
+          procName->pathTemplate = procName->baseName; // For simple names, template is the same as baseName
+          procName->pathParameters = {};
+          std::free($1);
+          $$ = procName;
+      }
+    | identifier SLASH path_placeholders
+      {
+          auto procName = new trx::ast::ProcedureName();
+          procName->baseName = std::string($1 ? $1 : "");
+          auto placeholders = static_cast<std::vector<std::string>*>($3);
+          if (placeholders) {
+              procName->pathParameters = std::move(*placeholders);
+              delete placeholders;
+          }
+          // Build path template
+          procName->pathTemplate = procName->baseName;
+          for (const auto& param : procName->pathParameters) {
+              procName->pathTemplate += "/{" + param + "}";
+          }
+          std::free($1);
+          $$ = procName;
+      }
+    ;
+
+path_placeholders
+    : LBRACE identifier RBRACE
+      {
+          auto params = new std::vector<std::string>();
+          params->push_back(std::string($2 ? $2 : ""));
+          std::free($2);
+          $$ = params;
+      }
+    | path_placeholders LBRACE identifier RBRACE
+      {
+          auto params = static_cast<std::vector<std::string>*>($1);
+          if (params) {
+              params->push_back(std::string($3 ? $3 : ""));
+              std::free($3);
+          }
+          $$ = params;
       }
     ;
 
@@ -1498,7 +1616,7 @@ multiplicative_expression
             {
                     $$ = binaryExpression(trx::ast::BinaryOperator::Multiply, $1, $3);
             }
-        | multiplicative_expression '/' unary_expression
+        | multiplicative_expression SLASH unary_expression
             {
                     $$ = binaryExpression(trx::ast::BinaryOperator::Divide, $1, $3);
             }

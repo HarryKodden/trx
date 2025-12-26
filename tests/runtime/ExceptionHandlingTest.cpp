@@ -25,7 +25,7 @@ bool runExceptionHandlingTests() {
         return false;
     }
 
-    if (!expect(throwProc->body.size() == 1, "test_throw should have one statement")) {
+    if (!expect(throwProc->body.size() == 1, "tdivision_test.trx:3:26est_throw should have one statement")) {
         return false;
     }
 
@@ -115,7 +115,7 @@ bool runExceptionHandlingTests() {
     // Test runtime exception (division by zero)
     constexpr const char *divisionSource = R"TRX(
         PROCEDURE test_division() {
-            result := 10 / 0;
+            VAR result := 10 / 0;
         }
     )TRX";
 

@@ -26,13 +26,19 @@ struct ParameterDecl {
     Identifier type;
 };
 
+struct ProcedureName {
+    std::string baseName;
+    std::string pathTemplate;
+    std::vector<std::string> pathParameters;
+};
+
 struct ProcedureConfig {
     std::optional<std::string> httpMethod;
     std::vector<std::pair<std::string, std::string>> httpHeaders;
 };
 
 struct ProcedureDecl {
-    Identifier name;
+    ProcedureName name;
     std::optional<ParameterDecl> input;
     std::optional<ParameterDecl> output;
     std::vector<Statement> body;

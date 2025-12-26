@@ -181,7 +181,7 @@ bool runExportFunctionTest() {
     std::cout << "Available declarations:\n";
     for (const auto &declaration : module.declarations) {
         if (const auto *procedure = std::get_if<trx::ast::ProcedureDecl>(&declaration)) {
-            std::cout << "  Procedure: " << procedure->name.name << " (exported: " << procedure->isExported << ", has_output: " << procedure->output.has_value();
+            std::cout << "  Procedure: " << procedure->name.baseName << " (exported: " << procedure->isExported << ", has_output: " << procedure->output.has_value();
             if (procedure->output.has_value()) {
                 std::cout << ", output_type: " << procedure->output->type.name;
             }
@@ -213,6 +213,62 @@ bool runExportFunctionTest() {
     return true;
 }
 
+bool runPathParameterTest() {
+    std::cout << "Running path parameter test...\n";
+
+    // Test source with procedures that have path parameters
+    constexpr const char *source = R"TRX(
+        EXPORT METHOD GET FUNCTION get_user(id: INTEGER) : INTEGER {
+            RETURN id;
+        }
+
+        EXPORT METHOD GET FUNCTION get_user_by_id/{id}(id: INTEGER) : INTEGER {
+            RETURN id;
+        }
+
+        EXPORT METHOD POST FUNCTION create_user(user: INTEGER) : INTEGER {
+            RETURN user;
+        }
+    )TRX";
+
+    trx::parsing::ParserDriver driver;
+    if (!driver.parseString(source, "test_path_params.trx")) {
+        reportDiagnostics(driver);
+        return false;
+    }
+
+    const auto &module = driver.context().module();
+
+    // Test procedure without path parameters
+    const auto *getUser = findProcedure(module, "get_user");
+    if (!expect(getUser != nullptr, "get_user should exist")) return false;
+    if (!expect(getUser->isExported, "get_user should be exported")) return false;
+    if (!expect(getUser->name.pathParameters.empty(), "get_user should have no path parameters")) return false;
+    if (!expect(getUser->name.pathTemplate == "get_user", "get_user pathTemplate should be 'get_user'")) return false;
+
+    // Test procedure with single path parameter (no body params for GET)
+    const auto *getUserById = findProcedure(module, "get_user_by_id");
+    if (!expect(getUserById != nullptr, "get_user_by_id should exist")) return false;
+    if (!expect(getUserById->isExported, "get_user_by_id should be exported")) return false;
+    if (!expect(getUserById->name.pathParameters.size() == 1, "get_user_by_id should have 1 path parameter")) return false;
+    if (!expect(getUserById->name.pathParameters[0] == "id", "get_user_by_id path parameter should be 'id'")) return false;
+    if (!expect(getUserById->name.pathTemplate == "get_user_by_id/{id}", "get_user_by_id pathTemplate should be 'get_user_by_id/{id}'")) return false;
+    // GET with path params should have explicit input parameters
+    if (!expect(getUserById->input.has_value(), "get_user_by_id should have explicit input parameters")) return false;
+
+    // Test procedure without path parameters (POST method)
+    const auto *createUser = findProcedure(module, "create_user");
+    if (!expect(createUser != nullptr, "create_user should exist")) return false;
+    if (!expect(createUser->isExported, "create_user should be exported")) return false;
+    if (!expect(createUser->name.pathParameters.empty(), "create_user should have no path parameters")) return false;
+    if (!expect(createUser->name.pathTemplate == "create_user", "create_user pathTemplate should be 'create_user'")) return false;
+    // POST should have input parameters
+    if (!expect(createUser->input.has_value(), "create_user should have input parameters")) return false;
+
+    std::cout << "Path parameter test passed!\n";
+    return true;
+}
+
 } // namespace trx::test
 
 int main() {
@@ -223,6 +279,11 @@ int main() {
 
     if (!trx::test::runExportConfigTest()) {
         std::cerr << "Export configuration tests failed.\n";
+        return 1;
+    }
+
+    if (!trx::test::runPathParameterTest()) {
+        std::cerr << "Path parameter tests failed.\n";
         return 1;
     }
 

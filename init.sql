@@ -1,5 +1,18 @@
 -- Initialize PostgreSQL database for TRX
 
+-- Create the DEPARTMENT table
+CREATE TABLE IF NOT EXISTS department (
+    id INTEGER PRIMARY KEY,
+    name VARCHAR(64) NOT NULL,
+    budget DECIMAL(12,2),
+    location VARCHAR(128)
+);
+
+INSERT INTO department (id, name, budget, location) VALUES
+(1, 'Engineering', 500000.00, 'Building A'),
+(2, 'Sales', 300000.00, 'Building B'),
+(3, 'Marketing', 200000.00, 'Building C');
+
 -- Create the PERSON table based on the TRX record definition
 CREATE TABLE IF NOT EXISTS person (
     id INTEGER PRIMARY KEY,

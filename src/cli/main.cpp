@@ -1,4 +1,4 @@
-#include "SwaggerServer.h"
+#include "Server.h"
 #include "trx/parsing/ParserDriver.h"
 #include "trx/runtime/Interpreter.h"
 
@@ -186,7 +186,7 @@ int main(int argc, char *argv[]) {
         std::cout << "Procedures and functions in " << sourcePath.string() << ":\n";
         for (const auto &decl : driver.context().module().declarations) {
             if (const auto *proc = std::get_if<trx::ast::ProcedureDecl>(&decl)) {
-                std::cout << "  " << proc->name.name << "\n";
+                std::cout << "  " << proc->name.baseName << "\n";
             }
         }
         return 0;
@@ -197,7 +197,7 @@ int main(int argc, char *argv[]) {
             sourcePaths.push_back(".");
         }
         serveOptions.dbConfig = dbConfig;
-        return trx::cli::runSwaggerServer(sourcePaths, serveOptions);
+        return trx::cli::runServer(sourcePaths, serveOptions);
     }
 
     if (sourcePaths.empty()) {

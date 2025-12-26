@@ -117,7 +117,7 @@ target_link_libraries(trx_core PRIVATE CURL::libcurl)
 
 add_executable(trx_compiler
   cli/main.cpp
-  cli/SwaggerServer.cpp
+  cli/Server.cpp
 )
 
 target_link_libraries(trx_compiler

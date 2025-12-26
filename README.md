@@ -100,6 +100,13 @@ EXPORT PROCEDURE send_notification() {
         THROW "Failed to send notification: " + response.status;
     }
 }
+
+EXPORT METHOD GET FUNCTION get_employee/{id}(id: INTEGER) : EmployeeOutput {
+    // RESTful API with path parameters
+    // Path parameters are bound to explicit function parameters
+    var result EmployeeOutput := find_employee(id);
+    RETURN result;
+}
 ```
 
 ### Automatic Type Definition from Database Tables
@@ -317,6 +324,55 @@ EXPORT METHOD PUT HEADERS {
 ```
 
 Supported HTTP methods: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS`
+
+#### Path Parameters in Procedure Names
+
+TRX supports RESTful URL patterns with path parameters directly in procedure names. Path parameters are specified using curly braces `{}` and are automatically extracted from the URL and passed to the procedure:
+
+```trx
+EXPORT METHOD GET FUNCTION get_employee/{id}(id: INTEGER) : EmployeeOutput {
+    // Exposed as GET /get_employee/{id}
+    // Path parameters are bound to explicit function parameters
+    var result EmployeeOutput := find_employee(id);
+    RETURN result;
+}
+
+EXPORT METHOD GET FUNCTION get_category_item/{category}/{id}(category: CHAR, id: INTEGER) : ItemOutput {
+    // Exposed as GET /get_category_item/{category}/{id}
+    // Multiple path parameters are bound to explicit function parameters
+    var result ItemOutput := find_item(category, id);
+    RETURN result;
+}
+
+EXPORT METHOD PUT FUNCTION update_employee/{id}(id: INTEGER, updates: EmployeeInput) : EmployeeOutput {
+    // Exposed as PUT /update_employee/{id}
+    // Path parameter 'id' and body parameter 'updates' are both available
+    var result EmployeeOutput := update_employee_record(id, updates);
+    RETURN result;
+}
+```
+
+**Path Parameter Rules:**
+- Path parameters are specified in the procedure name using `{parameter_name}` syntax
+- Functions with path parameters must declare explicit parameters matching the path parameter names
+- Multiple path parameters are supported: `/procedure/{param1}/{param2}`
+- Path parameters are automatically bound to the declared function parameters
+- Request body parameters (if any) are passed as additional function parameters
+
+**Example API Calls:**
+
+```bash
+# Get employee by ID
+curl -X GET http://localhost:8080/get_employee/123
+
+# Get item by category and ID  
+curl -X GET http://localhost:8080/get_category_item/electronics/456
+
+# Update employee (path param + body)
+curl -X PUT http://localhost:8080/update_employee/123 \
+  -H "Content-Type: application/json" \
+  -d '{"NAME": "Updated Name", "AGE": 35}'
+```
 
 The server provides:
 - Automatic JSON request/response handling

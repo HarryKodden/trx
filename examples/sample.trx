@@ -9,112 +9,233 @@ TYPE ADDRESS {
     ZIP INTEGER;
 }
 
-TYPE EMPLOYEE {
-    ID INTEGER;
-    DEPARTMENT CHAR(32);
-}
+TYPE DEPARTMENT FROM TABLE department;
 
-
-PROCEDURE inner() {
-    trace('Hello world');
-}
+TYPE EMPLOYEE FROM TABLE employee;
 
 TYPE PERSON FROM TABLE person;
 
-FUNCTION process_employee(employee: PERSON) : PERSON {
-    VAR result := employee;
+// Initialize database with DEPARTMENT table
+PROCEDURE init_department_table() {
+    EXEC SQL CREATE TABLE IF NOT EXISTS department (
+        id INTEGER PRIMARY KEY,
+        name VARCHAR(64) NOT NULL,
+        budget DECIMAL(12,2),
+        location VARCHAR(128)
+    )
 
-    IF employee.ACTIVE {
-        result.SALARY := employee.SALARY * 1.1;
+    EXEC SQL INSERT INTO department (id, name, budget, location) VALUES (1, 'Engineering', 500000.00, 'Building A');
+    EXEC SQL INSERT INTO department (id, name, budget, location) VALUES (2, 'Sales', 300000.00, 'Building B');
+    EXEC SQL INSERT INTO department (id, name, budget, location) VALUES (3, 'Marketing', 200000.00, 'Building C');
+}
+
+// PERSON CRUD Operations
+
+EXPORT FUNCTION get_all_persons() : INTEGER {
+    RETURN 42;
+}
+
+EXPORT FUNCTION get_person_by_id(id: INTEGER) : INTEGER {
+    RETURN id;
+}
+
+EXPORT METHOD POST FUNCTION create_person(person: PERSON) : PERSON {
+    EXEC SQL INSERT INTO person (name, age, active, salary) VALUES (:person.name, :person.age, :person.active, :person.salary);
+
+    IF SQLCODE = 0 {
+        trace("Created person successfully");
+        RETURN person;
     } ELSE {
-        result.SALARY := 0;
+        trace("Failed to create person");
+        RETURN {};
     }
-
-    inner();
-
-    exec sql declare c1 cursor for select person_id, department from employee where person_id = employee.id;
-    exec sql open c1;
-        var employee from table employee;
-        exec sql fetch c1 into :employee.person_id, :employee.department;
-
-    exec sql close c1;
-    
-    WHILE result.SALARY < 50000 {
-        result.SALARY := result.SALARY + 1000;
-    }
-
-    IF employee.ACTIVE {
-        result.SALARY := result.SALARY * 1.15;
-    }
-
-    RETURN result;
 }
 
-FUNCTION calculate_bonus(person: PERSON) : PERSON {
-    VAR result := person;
-    result.SALARY := person.SALARY * 1.1;
-    RETURN result;
-}
+EXPORT METHOD PUT FUNCTION update_person(id: INTEGER, person: PERSON) : PERSON {
+    EXEC SQL UPDATE person SET name = :person.name, age = :person.age, active = :person.active, salary = :person.salary
+             WHERE id = :id;
 
-EXPORT METHOD GET PROCEDURE test_lists() {
-    var numbers list(INTEGER);
-    var employees list(EMPLOYEE);
-
-    append(numbers, 10);
-    append(numbers, 20);
-    append(numbers, 30);
-
-    trace("Length of numbers: " + len(numbers));
-
-    var emp EMPLOYEE;
-    emp.DEPARTMENT := "Engineering";
-    append(employees, emp);
-
-    emp.DEPARTMENT := "Sales";
-    append(employees, emp);
-
-    trace("Length of employees: " + len(employees));
-}
-
-EXPORT METHOD POST HEADERS {
-    "X-Custom-Header": "CustomValue";
-    "Cache-Control": "no-cache";
-} FUNCTION process_employee(employee: PERSON) : PERSON {
-    VAR result := employee;
-
-    IF employee.ACTIVE {
-        result.SALARY := employee.SALARY * 1.1;
+    IF SQLCODE = 0 {
+        person.id := id;
+        trace("Updated person with ID: " + id);
+        RETURN person;
     } ELSE {
-        result.SALARY := 0;
+        trace("Failed to update person with ID: " + id);
+        RETURN {};
     }
-
-    inner();
-
-    exec sql declare c1 cursor for select person_id, department from employee where person_id = employee.id;
-    exec sql open c1;
-        var employee from table employee;
-        exec sql fetch c1 into :employee.person_id, :employee.department;
-
-    exec sql close c1;
-    
-    WHILE result.SALARY < 50000 {
-        result.SALARY := result.SALARY + 1000;
-    }
-
-    IF employee.ACTIVE {
-        result.SALARY := result.SALARY * 1.15;
-    }
-
-    RETURN result;
 }
 
-EXPORT METHOD GET PROCEDURE get_user() {
-    trace("Getting user data");
+EXPORT METHOD DELETE PROCEDURE delete_person(id: INTEGER) : BOOLEAN {
+    EXEC SQL DELETE FROM person WHERE id = :id;
+
+    IF SQLCODE = 0 {
+        trace("Deleted person with ID: " + id);
+        RETURN TRUE;
+    } ELSE {
+        trace("Failed to delete person with ID: " + id);
+        RETURN FALSE;
+    }
 }
 
-EXPORT METHOD POST HEADERS {
-    "X-API-Version": "1.0";
-    "X-Custom-Header": "CustomValue";
-} PROCEDURE create_user() {
-    trace("Creating user");
+// DEPARTMENT CRUD Operations
+
+EXPORT METHOD GET FUNCTION get_all_departments() : LIST(DEPARTMENT) {
+    VAR departments LIST(DEPARTMENT);
+
+    EXEC SQL DECLARE c2 CURSOR FOR SELECT id, name, budget, location FROM department ORDER BY id;
+    EXEC SQL OPEN c2;
+
+    VAR dept DEPARTMENT;
+    WHILE TRUE {
+        EXEC SQL FETCH c2 INTO :dept.id, :dept.name, :dept.budget, :dept.location;
+        IF SQLCODE != 0 {
+            BREAK;
+        }
+        APPEND(departments, dept);
+    }
+
+    EXEC SQL CLOSE c2;
+
+    trace("Retrieved " + LEN(departments) + " departments");
+    RETURN departments;
+}
+
+EXPORT METHOD GET FUNCTION get_department_by_id(id: INTEGER) : DEPARTMENT {
+    VAR dept DEPARTMENT;
+
+    EXEC SQL SELECT id, name, budget, location INTO :dept.id, :dept.name, :dept.budget, :dept.location
+             FROM department WHERE id = :id;
+
+    IF SQLCODE != 0 {
+        trace("Department with ID " + id + " not found");
+        RETURN {};
+    }
+
+    trace("Retrieved department: " + dept.name);
+    RETURN dept;
+}
+
+EXPORT METHOD POST FUNCTION create_department(dept: DEPARTMENT) : DEPARTMENT {
+    EXEC SQL INSERT INTO department (name, budget, location) VALUES (:dept.name, :dept.budget, :dept.location);
+
+    IF SQLCODE = 0 {
+        trace("Created department successfully");
+        RETURN dept;
+    } ELSE {
+        trace("Failed to create department");
+        RETURN {};
+    }
+}
+
+EXPORT METHOD PUT FUNCTION update_department(id: INTEGER, dept: DEPARTMENT) : DEPARTMENT {
+    EXEC SQL UPDATE department SET name = :dept.name, budget = :dept.budget, location = :dept.location
+             WHERE id = :id;
+
+    IF SQLCODE = 0 {
+        dept.id := id;
+        trace("Updated department with ID: " + id);
+        RETURN dept;
+    } ELSE {
+        trace("Failed to update department with ID: " + id);
+        RETURN {};
+    }
+}
+
+EXPORT METHOD DELETE PROCEDURE delete_department(id: INTEGER) : BOOLEAN {
+    EXEC SQL DELETE FROM department WHERE id = :id;
+
+    IF SQLCODE = 0 {
+        trace("Deleted department with ID: " + id);
+        RETURN TRUE;
+    } ELSE {
+        trace("Failed to delete department with ID: " + id);
+        RETURN FALSE;
+    }
+}
+
+// EMPLOYEE CRUD Operations
+
+EXPORT METHOD GET FUNCTION get_all_employees() : LIST(EMPLOYEE) {
+    VAR employees LIST(EMPLOYEE);
+
+    EXEC SQL DECLARE c3 CURSOR FOR
+        SELECT e.person_id, e.department, p.name, p.age, p.active, p.salary
+        FROM employee e
+        JOIN person p ON e.person_id = p.id
+        ORDER BY e.person_id;
+
+    EXEC SQL OPEN c3;
+
+    VAR emp EMPLOYEE;
+    VAR person PERSON;
+    WHILE TRUE {
+        EXEC SQL FETCH c3 INTO :emp.person_id, :emp.department, :person.name, :person.age, :person.active, :person.salary;
+        IF SQLCODE != 0 {
+            BREAK;
+        }
+        APPEND(employees, emp);
+    }
+
+    EXEC SQL CLOSE c3;
+
+    trace("Retrieved " + LEN(employees) + " employees");
+    RETURN employees;
+}
+
+EXPORT METHOD GET FUNCTION get_employee_by_id(person_id: INTEGER) : EMPLOYEE {
+    VAR emp EMPLOYEE;
+
+    EXEC SQL SELECT person_id, department INTO :emp.person_id, :emp.department
+             FROM employee WHERE person_id = :person_id;
+
+    IF SQLCODE != 0 {
+        trace("Employee with person ID " + person_id + " not found");
+        RETURN {};
+    }
+
+    trace("Retrieved employee for person ID: " + person_id);
+    RETURN emp;
+}
+
+EXPORT METHOD POST FUNCTION create_employee(emp: EMPLOYEE) : EMPLOYEE {
+    EXEC SQL INSERT INTO employee (person_id, department) VALUES (:emp.person_id, :emp.department);
+
+    IF SQLCODE = 0 {
+        trace("Created employee for person ID: " + emp.person_id);
+        RETURN emp;
+    } ELSE {
+        trace("Failed to create employee for person ID: " + emp.person_id);
+        RETURN {};
+    }
+}
+
+EXPORT METHOD PUT FUNCTION update_employee(person_id: INTEGER, emp: EMPLOYEE) : EMPLOYEE {
+    EXEC SQL UPDATE employee SET department = :emp.department WHERE person_id = :person_id;
+
+    IF SQLCODE = 0 {
+        emp.person_id := person_id;
+        trace("Updated employee for person ID: " + person_id);
+        RETURN emp;
+    } ELSE {
+        trace("Failed to update employee for person ID: " + person_id);
+        RETURN {};
+    }
+}
+
+EXPORT METHOD DELETE PROCEDURE delete_employee(person_id: INTEGER) : BOOLEAN {
+    EXEC SQL DELETE FROM employee WHERE person_id = :person_id;
+
+    IF SQLCODE = 0 {
+        trace("Deleted employee for person ID: " + person_id);
+        RETURN TRUE;
+    } ELSE {
+        trace("Failed to delete employee for person ID: " + person_id);
+        RETURN FALSE;
+    }
+}
+
+// Initialize the database
+PROCEDURE main() {
+    init_department_table();
+    trace("Database initialized with CRUD sample data");
 }

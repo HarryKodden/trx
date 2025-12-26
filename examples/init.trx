@@ -1,13 +1,21 @@
-TYPE PERSON FROM TABLE person;
+TYPE PERSON {
+    ID integer;
+    name CHAR(32);
+    age integer;
+    active boolean;
+    salary decimal(5,2);
+}
 
 TYPE EMPLOYEE {
     ID integer;
     DEPARTMENT CHAR(32);
 }
 
-TYPE EMPLOYEES {
-    employees list(EMPLOYEE);
+TYPE ADDRESS {
+    STREET CHAR(64);
+    ZIP INTEGER;
 }
+
 
 PROCEDURE init_database() {
     EXEC SQL CREATE TABLE IF NOT EXISTS address (street TEXT, zip INTEGER);
