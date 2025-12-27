@@ -916,27 +916,7 @@ void executeReturn(const trx::ast::ReturnStatement &returnStmt, ExecutionContext
         if (!returnStmt.value) {
             throw std::runtime_error("Function must return a value");
         }
-        // For functions, the return value must be a local existing variable
-        if (std::holds_alternative<trx::ast::VariableExpression>(returnStmt.value->node)) {
-            const auto &varExpr = std::get<trx::ast::VariableExpression>(returnStmt.value->node);
-            // Check if it's a simple variable (not a path)
-            if (varExpr.path.size() == 1 && !varExpr.path[0].subscript) {
-                const std::string &varName = varExpr.path[0].identifier;
-                if (context.variables.find(varName) == context.variables.end()) {
-                    throw std::runtime_error("Return variable '" + varName + "' does not exist");
-                }
-                // For functions, check type compatibility with output type
-                if (context.outputType) {
-                    // TODO: Implement type checking based on context.outputType
-                    // For now, just ensure the variable exists and is local
-                }
-            } else {
-                throw std::runtime_error("Return statement must reference a simple local variable");
-            }
-        } else {
-            throw std::runtime_error("Return statement must reference a local variable");
-        }
-        
+        // For functions, evaluate the return expression
         JsonValue val = evaluateExpression(returnStmt.value, context);
         throw ReturnException(val);
     } else {
@@ -1024,7 +1004,7 @@ void executeSql(const trx::ast::SqlStatement &sqlStmt, ExecutionContext &context
                 std::cout << "SQL EXEC: " << sqlStmt.sql << std::endl;
             } catch (const std::exception& e) {
                 context.interpreter.setSqlCode(-1.0); // Error
-                throw;
+                std::cerr << "SQL execution failed: " << e.what() << std::endl;
             }
             break;
         }
@@ -1040,7 +1020,7 @@ void executeSql(const trx::ast::SqlStatement &sqlStmt, ExecutionContext &context
                 std::cout << "SQL DECLARE CURSOR: " << sqlStmt.identifier << " AS " << selectSql << std::endl;
             } catch (const std::exception& e) {
                 context.interpreter.setSqlCode(-1.0); // Error
-                throw;
+                std::cerr << "SQL cursor declare failed: " << e.what() << std::endl;
             }
             break;
         }
@@ -1083,7 +1063,7 @@ void executeSql(const trx::ast::SqlStatement &sqlStmt, ExecutionContext &context
                 }
             } catch (const std::runtime_error& e) {
                 context.interpreter.setSqlCode(-1.0); // Error
-                throw std::runtime_error("Cursor operation failed: " + std::string(e.what()));
+                std::cerr << "Cursor operation failed: " << e.what() << std::endl;
             }
             break;
         }
@@ -1095,7 +1075,7 @@ void executeSql(const trx::ast::SqlStatement &sqlStmt, ExecutionContext &context
                 std::cout << "SQL CLOSE CURSOR: " << sqlStmt.identifier << std::endl;
             } catch (const std::exception& e) {
                 context.interpreter.setSqlCode(-1.0); // Error
-                throw;
+                std::cerr << "SQL cursor close failed: " << e.what() << std::endl;
             }
             break;
         }
@@ -1131,7 +1111,7 @@ void executeSql(const trx::ast::SqlStatement &sqlStmt, ExecutionContext &context
                 }
             } catch (const std::exception& e) {
                 context.interpreter.setSqlCode(-1.0); // Error
-                throw;
+                std::cerr << "SQL select for update failed: " << e.what() << std::endl;
             }
             break;
         }

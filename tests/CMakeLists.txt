@@ -214,3 +214,18 @@ add_test(
   NAME ServerIntegrationTest
   COMMAND trx_server_integration_test
 )
+
+add_executable(trx_comprehensive_database_test
+  runtime/TestUtils.h
+  runtime/ComprehensiveDatabaseTest.cpp
+)
+
+target_link_libraries(trx_comprehensive_database_test
+  PRIVATE
+    trx_core
+)
+
+add_test(
+  NAME ComprehensiveDatabaseTest
+  COMMAND trx_comprehensive_database_test
+)

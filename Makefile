@@ -41,7 +41,7 @@ serve: docker-runtime
 	docker run --rm --name trx-server -v "$(PWD)":/workspace -p 8080:8080 $(DOCKER_RUNTIME) serve /workspace/$(SOURCE) &
 
 debug-examples: docker-runtime
-	docker run --rm -v "$(PWD)":/workspace $(DOCKER_RUNTIME) ls -l /workspace/examples
+	$(DOCKER_DEV_SHELL) ls -l /workspace/examples
 
 clean:
 	rm -rf build

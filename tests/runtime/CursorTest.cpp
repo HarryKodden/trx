@@ -110,8 +110,15 @@ bool runCursorTest() {
         return false;
     }
 
-    std::cout << "Parsing successful. Executing procedures...\n";
-    trx::runtime::Interpreter interpreter(driver.context().module(), nullptr); // Use default SQLite driver
+    std::cout << "Parsing successful. Creating interpreter with in-memory SQLite database...\n";
+
+    // Create interpreter with explicit in-memory SQLite database
+    trx::runtime::DatabaseConfig dbConfig;
+    dbConfig.type = trx::runtime::DatabaseType::SQLITE;
+    dbConfig.databasePath = ":memory:";
+
+    auto dbDriver = trx::runtime::createDatabaseDriver(dbConfig);
+    trx::runtime::Interpreter interpreter(driver.context().module(), std::move(dbDriver));
 
     trx::runtime::JsonValue input{trx::runtime::JsonValue::Object{}};
 
