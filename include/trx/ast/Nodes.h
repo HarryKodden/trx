@@ -29,7 +29,7 @@ struct ParameterDecl {
 struct ProcedureName {
     std::string baseName;
     std::string pathTemplate;
-    std::vector<std::string> pathParameters;
+    std::vector<ParameterDecl> pathParameters;
 };
 
 struct ProcedureConfig {
@@ -43,6 +43,7 @@ struct ProcedureDecl {
     std::optional<ParameterDecl> output;
     std::vector<Statement> body;
     bool isExported{false};
+    bool isFunction{false};
     std::optional<std::string> httpMethod; // Optional HTTP method override
     std::vector<std::pair<std::string, std::string>> httpHeaders; // Optional custom headers
 };

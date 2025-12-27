@@ -1309,8 +1309,45 @@ std::optional<JsonValue> Interpreter::execute(const std::string &procedureName, 
         dbDriver_->beginTransaction();
     }
 
-    ExecutionContext context{*this, {}, false, std::nullopt, false, procedure->output.has_value(), std::nullopt};
-    // Note: No longer setting up implicit input/output variables
+    // Create execution context
+    ExecutionContext context{*this, {}, false, std::nullopt, false, false, std::nullopt};
+    context.isFunction = procedure->isFunction;
+
+    // Automatically instantiate path parameters as local variables
+    for (size_t i = 0; i < procedure->name.pathParameters.size(); ++i) {
+        const auto &paramDecl = procedure->name.pathParameters[i];
+        std::string paramName = paramDecl.name.name;
+        std::string paramType = paramDecl.type.name;
+        
+        // Find the corresponding path parameter value
+        auto pathParamIt = pathParams.find(paramName);
+        if (pathParamIt != pathParams.end()) {
+            std::string valueStr = pathParamIt->second;
+            JsonValue paramValue;
+            
+            // Convert string value to appropriate type based on parameter type
+            if (paramType == "INTEGER") {
+                try {
+                    paramValue = JsonValue(std::stoi(valueStr));
+                } catch (...) {
+                    paramValue = JsonValue(0); // Default to 0 on conversion error
+                }
+            } else if (paramType == "DECIMAL" || paramType == "DOUBLE") {
+                try {
+                    paramValue = JsonValue(std::stod(valueStr));
+                } catch (...) {
+                    paramValue = JsonValue(0.0); // Default to 0.0 on conversion error
+                }
+            } else if (paramType == "BOOLEAN") {
+                paramValue = JsonValue(valueStr == "true" || valueStr == "TRUE" || valueStr == "1");
+            } else {
+                // Default to string for unknown types
+                paramValue = JsonValue(valueStr);
+            }
+            
+            context.variables[paramName] = paramValue;
+        }
+    }
     
     // Bind path parameters to explicit function parameters
     if (procedure->input && !pathParams.empty()) {

@@ -795,6 +795,7 @@ function_decl
                 delete body;
             }
 
+            procedure.isFunction = true;
             driver.context().addProcedure(std::move(procedure));
         }
     | FUNCTION procedure_name LPAREN input_type RPAREN ':' type_name procedure_body
@@ -822,6 +823,7 @@ function_decl
                 delete body;
             }
 
+            procedure.isFunction = true;
             driver.context().addProcedure(std::move(procedure));
         }
     | EXPORT procedure_config FUNCTION procedure_name '(' ')' ':' type_name procedure_body
@@ -879,6 +881,7 @@ function_decl
                 delete body;
             }
 
+            procedure.isFunction = true;
             driver.context().addProcedure(std::move(procedure));
         }
     ;
@@ -989,7 +992,7 @@ procedure_name
       {
           auto procName = new trx::ast::ProcedureName();
           procName->baseName = std::string($1 ? $1 : "");
-          auto placeholders = static_cast<std::vector<std::string>*>($3);
+          auto placeholders = static_cast<std::vector<trx::ast::ParameterDecl>*>($3);
           if (placeholders) {
               procName->pathParameters = std::move(*placeholders);
               delete placeholders;
@@ -997,7 +1000,9 @@ procedure_name
           // Build path template
           procName->pathTemplate = procName->baseName;
           for (const auto& param : procName->pathParameters) {
-              procName->pathTemplate += "/{" + param + "}";
+              procName->pathTemplate += "/{" + param.name.name + "}";
+              // Validate path parameter type
+              (void)driver.context().makeParameter(param.name.name, param.type.name, param.type.location);
           }
           std::free($1);
           $$ = procName;
@@ -1005,19 +1010,27 @@ procedure_name
     ;
 
 path_placeholders
-    : LBRACE identifier RBRACE
+    : LBRACE identifier ':' type_name RBRACE
       {
-          auto params = new std::vector<std::string>();
-          params->push_back(std::string($2 ? $2 : ""));
-          std::free($2);
+          auto params = new std::vector<trx::ast::ParameterDecl>();
+          trx::ast::ParameterDecl param;
+          param.name = {.name = $2 ? std::string($2) : std::string{}, .location = makeLocation(driver, @2)};
+          param.type = {.name = $4 ? std::string($4) : std::string{}, .location = makeLocation(driver, @4)};
+          params->push_back(param);
           $$ = params;
+          std::free($2);
+          std::free($4);
       }
-    | path_placeholders LBRACE identifier RBRACE
+    | path_placeholders LBRACE identifier ':' type_name RBRACE
       {
-          auto params = static_cast<std::vector<std::string>*>($1);
+          auto params = static_cast<std::vector<trx::ast::ParameterDecl>*>($1);
           if (params) {
-              params->push_back(std::string($3 ? $3 : ""));
+              trx::ast::ParameterDecl param;
+              param.name = {.name = $3 ? std::string($3) : std::string{}, .location = makeLocation(driver, @3)};
+              param.type = {.name = $5 ? std::string($5) : std::string{}, .location = makeLocation(driver, @5)};
+              params->push_back(param);
               std::free($3);
+              std::free($5);
           }
           $$ = params;
       }
@@ -1887,27 +1900,27 @@ type_name
       }
     | _INTEGER
       {
-          $$ = strdup("_INTEGER");
+          $$ = strdup("INTEGER");
       }
     | _SMALLINT
       {
-          $$ = strdup("_SMALLINT");
+          $$ = strdup("SMALLINT");
       }
     | _DECIMAL
       {
-          $$ = strdup("_DECIMAL");
+          $$ = strdup("DECIMAL");
       }
     | _BOOLEAN
       {
-          $$ = strdup("_BOOLEAN");
+          $$ = strdup("BOOLEAN");
       }
     | _FILE
       {
-          $$ = strdup("_FILE");
+          $$ = strdup("FILE");
       }
     | _BLOB
       {
-          $$ = strdup("_BLOB");
+          $$ = strdup("BLOB");
       }
     | DATE
       {

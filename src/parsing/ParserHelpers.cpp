@@ -104,7 +104,7 @@ ast::ParameterDecl ParserContext::makeParameter(std::string name, std::string ty
 
     // Check if it's a built-in type
     static const std::unordered_set<std::string> builtinTypes = {
-        "_CHAR", "_INTEGER", "_SMALLINT", "_DECIMAL", "_BOOLEAN", "_FILE", "_BLOB", "DATE", "TIME", "JSON"
+        "CHAR", "_CHAR", "INTEGER", "_INTEGER", "SMALLINT", "_SMALLINT", "DECIMAL", "_DECIMAL", "BOOLEAN", "_BOOLEAN", "FILE", "_FILE", "BLOB", "_BLOB", "DATE", "_DATE", "TIME", "_TIME", "JSON"
     };
 
     if (recordIndex_.find(parameter.type.name) == recordIndex_.end() && builtinTypes.find(parameter.type.name) == builtinTypes.end()) {

@@ -86,7 +86,7 @@ std::optional<std::pair<std::string, std::map<std::string, std::string>>> matchP
                 std::map<std::string, std::string> params;
                 // matches[0] is the full match, captures start from matches[1]
                 for (size_t i = 1; i < matches.size() && i - 1 < proc->name.pathParameters.size(); ++i) {
-                    params[proc->name.pathParameters[i - 1]] = matches[i].str();
+                    params[proc->name.pathParameters[i - 1].name.name] = matches[i].str();
                 }
                 return std::make_pair(procName, params);
             }
@@ -678,17 +678,17 @@ std::string buildSwaggerSpec(const std::map<std::string, const trx::ast::Procedu
         if (!proc->name.pathParameters.empty()) {
             spec << "        \"parameters\": [\n";
             bool firstParam = true;
-            for (const auto &paramName : proc->name.pathParameters) {
+            for (const auto &param : proc->name.pathParameters) {
                 if (!firstParam) {
                     spec << ",\n";
                 }
                 firstParam = false;
                 spec << "          {\n";
-                spec << "            \"name\": \"" << escapeJsonString(paramName) << "\",\n";
+                spec << "            \"name\": \"" << escapeJsonString(param.name.name) << "\",\n";
                 spec << "            \"in\": \"path\",\n";
                 spec << "            \"required\": true,\n";
                 spec << "            \"schema\": {\n";
-                spec << "              \"type\": \"string\"\n";
+                spec << "              \"type\": \"" << escapeJsonString(param.type.name) << "\"\n";
                 spec << "            }\n";
                 spec << "          }";
             }

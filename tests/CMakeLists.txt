@@ -199,3 +199,18 @@ add_test(
   NAME ExportTest
   COMMAND trx_export_test
 )
+
+add_executable(trx_server_integration_test
+  runtime/TestUtils.h
+  runtime/ServerIntegrationTest.cpp
+)
+
+target_link_libraries(trx_server_integration_test
+  PRIVATE
+    trx_core
+)
+
+add_test(
+  NAME ServerIntegrationTest
+  COMMAND trx_server_integration_test
+)

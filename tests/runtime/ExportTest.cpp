@@ -222,7 +222,7 @@ bool runPathParameterTest() {
             RETURN id;
         }
 
-        EXPORT METHOD GET FUNCTION get_user_by_id/{id}(id: INTEGER) : INTEGER {
+        EXPORT METHOD GET FUNCTION get_user_by_id/{id: INTEGER}(id: INTEGER) : INTEGER {
             RETURN id;
         }
 
@@ -251,7 +251,8 @@ bool runPathParameterTest() {
     if (!expect(getUserById != nullptr, "get_user_by_id should exist")) return false;
     if (!expect(getUserById->isExported, "get_user_by_id should be exported")) return false;
     if (!expect(getUserById->name.pathParameters.size() == 1, "get_user_by_id should have 1 path parameter")) return false;
-    if (!expect(getUserById->name.pathParameters[0] == "id", "get_user_by_id path parameter should be 'id'")) return false;
+    if (!expect(getUserById->name.pathParameters[0].name.name == "id", "get_user_by_id path parameter should be 'id'")) return false;
+    if (!expect(getUserById->name.pathParameters[0].type.name == "INTEGER", "get_user_by_id path parameter type should be 'INTEGER'")) return false;
     if (!expect(getUserById->name.pathTemplate == "get_user_by_id/{id}", "get_user_by_id pathTemplate should be 'get_user_by_id/{id}'")) return false;
     // GET with path params should have explicit input parameters
     if (!expect(getUserById->input.has_value(), "get_user_by_id should have explicit input parameters")) return false;

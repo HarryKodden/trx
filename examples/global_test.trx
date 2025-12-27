@@ -7,7 +7,7 @@ FUNCTION increment_counter() : INTEGER {
     RETURN global_counter;
 }
 
-FUNCTION greet() : _INTEGER {
+FUNCTION greet() : INTEGER {
     trace("Hello from global function! Name: " + global_name);
     RETURN 42;
 }
