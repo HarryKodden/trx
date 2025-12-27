@@ -39,16 +39,33 @@ namespace trx::cli {
 namespace {
 
 // Helper function to match path against template and extract parameters
-std::optional<std::pair<std::string, std::map<std::string, std::string>>> matchPathTemplate(
+std::optional<std::pair<const trx::ast::ProcedureDecl *, std::map<std::string, std::string>>> matchPathTemplate(
     const std::string &requestPath, 
+    const std::string &requestMethod,
     const std::map<std::string, const trx::ast::ProcedureDecl *> &procedureLookup) {
     
-    for (const auto &[procName, proc] : procedureLookup) {
+    // Strip leading slash and /api/ prefix from request path for matching
+    std::string path = requestPath;
+    if (!path.empty() && path[0] == '/') {
+        path = path.substr(1);
+    }
+    if (path.starts_with("api/")) {
+        path = path.substr(4);
+    }
+    
+    for (const auto &[key, proc] : procedureLookup) {
         const std::string &templatePath = proc->name.pathTemplate;
         
+        // Check HTTP method first
+        std::string defaultMethod = "GET"; // proc->input ? "POST" : "GET";
+        std::string expectedMethod = proc->httpMethod.value_or(defaultMethod);
+        if (requestMethod != expectedMethod) {
+            continue; // Method doesn't match, skip this procedure
+        }
+        
         // Simple exact match for now (backward compatibility)
-        if (requestPath == templatePath) {
-            return std::make_pair(procName, std::map<std::string, std::string>{});
+        if (path == templatePath) {
+            return std::make_pair(proc, std::map<std::string, std::string>{});
         }
         
         // Check if template has parameters
@@ -82,13 +99,13 @@ std::optional<std::pair<std::string, std::map<std::string, std::string>>> matchP
             
             std::regex pathRegex("^" + escaped + "$");
             std::smatch matches;
-            if (std::regex_match(requestPath, matches, pathRegex)) {
+            if (std::regex_match(path, matches, pathRegex)) {
                 std::map<std::string, std::string> params;
                 // matches[0] is the full match, captures start from matches[1]
                 for (size_t i = 1; i < matches.size() && i - 1 < proc->name.pathParameters.size(); ++i) {
                     params[proc->name.pathParameters[i - 1].name.name] = matches[i].str();
                 }
-                return std::make_pair(procName, params);
+                return std::make_pair(proc, params);
             }
         }
     }
@@ -646,6 +663,28 @@ std::string serializeJsonValue(const trx::runtime::JsonValue &value) {
     throw std::runtime_error("Unsupported JsonValue variant");
 }
 
+// Helper function to map TRX types to OpenAPI types
+std::string mapTrxTypeToOpenApi(const std::string &trxType) {
+    if (trxType == "CHAR" || trxType == "_CHAR" || trxType == "STRING" || trxType == "_STRING") {
+        return "string";
+    } else if (trxType == "INTEGER" || trxType == "_INTEGER" || trxType == "SMALLINT" || trxType == "_SMALLINT") {
+        return "integer";
+    } else if (trxType == "DECIMAL" || trxType == "_DECIMAL") {
+        return "number";
+    } else if (trxType == "BOOLEAN" || trxType == "_BOOLEAN") {
+        return "boolean";
+    } else if (trxType == "DATE" || trxType == "_DATE" || trxType == "TIME" || trxType == "_TIME") {
+        return "string"; // Dates and times are typically represented as strings in OpenAPI
+    } else if (trxType == "JSON") {
+        return "object";
+    } else if (trxType == "FILE" || trxType == "_FILE" || trxType == "BLOB" || trxType == "_BLOB") {
+        return "string"; // Files and blobs are typically base64 encoded strings
+    } else {
+        // For custom types (records), return as-is (they'll be defined in components/schemas)
+        return trxType;
+    }
+}
+
 std::string buildSwaggerSpec(const std::map<std::string, const trx::ast::ProcedureDecl *> &procedureLookup, const std::vector<const trx::ast::RecordDecl *> &records, [[maybe_unused]] int port) {
     std::ostringstream spec;
     spec << R"(
@@ -657,84 +696,101 @@ std::string buildSwaggerSpec(const std::map<std::string, const trx::ast::Procedu
   },
   "paths": {)";
 
-    // Add paths for each procedure
+    // Group procedures by path template
+    std::map<std::string, std::vector<const trx::ast::ProcedureDecl *>> proceduresByPath;
+    for (const auto &[key, proc] : procedureLookup) {
+        proceduresByPath[proc->name.pathTemplate].push_back(proc);
+    }
+
+    // Add paths for each unique path template
     bool firstPath = true;
-    for (const auto &[name, proc] : procedureLookup) {
+    for (const auto &[pathTemplate, procedures] : proceduresByPath) {
         if (!firstPath) {
             spec << ",";
         }
         firstPath = false;
-        spec << "\n    \"" << escapeJsonString(proc->name.pathTemplate) << "\": {\n";
+        spec << "\n    \"/api/" << escapeJsonString(pathTemplate) << "\": {";
         
-        // Use custom HTTP method if specified, otherwise default to POST
-        std::string httpMethod = proc->httpMethod.value_or("POST");
-        std::string lowerMethod = httpMethod;
-        std::transform(lowerMethod.begin(), lowerMethod.end(), lowerMethod.begin(), ::tolower);
-        spec << "      \"" << escapeJsonString(lowerMethod) << "\": {\n";
-        
-        spec << "        \"summary\": \"Execute " << escapeJsonString(proc->name.baseName) << " procedure\",\n";
-        
-        // Add path parameters if any
-        if (!proc->name.pathParameters.empty()) {
-            spec << "        \"parameters\": [\n";
-            bool firstParam = true;
-            for (const auto &param : proc->name.pathParameters) {
-                if (!firstParam) {
-                    spec << ",\n";
+        // Add operations for this path
+        bool firstOperation = true;
+        for (const auto *proc : procedures) {
+            if (!firstOperation) {
+                spec << ",";
+            }
+            firstOperation = false;
+            spec << "\n";
+            
+            // Use custom HTTP method if specified, otherwise default based on input
+            std::string defaultMethod = "GET"; // proc->input ? "POST" : "GET";
+            std::string httpMethod = proc->httpMethod.value_or(defaultMethod);
+            std::string lowerMethod = httpMethod;
+            std::transform(lowerMethod.begin(), lowerMethod.end(), lowerMethod.begin(), ::tolower);
+            spec << "      \"" << escapeJsonString(lowerMethod) << "\": {\n";
+            
+            spec << "        \"summary\": \"Execute " << escapeJsonString(proc->name.baseName) << " procedure\",\n";
+            
+            // Add path parameters if any
+            if (!proc->name.pathParameters.empty()) {
+                spec << "        \"parameters\": [\n";
+                bool firstParam = true;
+                for (const auto &param : proc->name.pathParameters) {
+                    if (!firstParam) {
+                        spec << ",\n";
+                    }
+                    firstParam = false;
+                    spec << "          {\n";
+                    spec << "            \"name\": \"" << escapeJsonString(param.name.name) << "\",\n";
+                    spec << "            \"in\": \"path\",\n";
+                    spec << "            \"required\": true,\n";
+                    spec << "            \"schema\": {\n";
+                    spec << "              \"type\": \"" << mapTrxTypeToOpenApi(param.type.name) << "\"\n";
+                    spec << "            }\n";
+                    spec << "          }";
                 }
-                firstParam = false;
-                spec << "          {\n";
-                spec << "            \"name\": \"" << escapeJsonString(param.name.name) << "\",\n";
-                spec << "            \"in\": \"path\",\n";
-                spec << "            \"required\": true,\n";
-                spec << "            \"schema\": {\n";
-                spec << "              \"type\": \"" << escapeJsonString(param.type.name) << "\"\n";
+                spec << "\n        ],\n";
+            }
+            
+            // Only add requestBody for methods that support it
+            if (httpMethod != "GET" && httpMethod != "HEAD" && httpMethod != "DELETE") {
+                spec << "        \"requestBody\": {\n";
+                spec << "          \"required\": true,\n";
+                spec << "          \"content\": {\n";
+                spec << "            \"application/json\": {\n";
+                spec << "              \"schema\": ";
+                if (proc->input) {
+                    spec << "{\"$ref\": \"#/components/schemas/" << escapeJsonString(proc->input->type.name) << "\"}";
+                } else {
+                    spec << "{\"type\": \"object\"}";
+                }
+                spec << "\n            }\n";
+                spec << "          }\n";
+                spec << "        },\n";
+            }
+            
+            spec << "        \"responses\": {\n";
+            spec << "          \"200\": {\n";
+            spec << "            \"description\": \"Execution succeeded\",\n";
+            spec << "            \"content\": {\n";
+            spec << "              \"application/json\": {\n";
+            spec << "                \"schema\": ";
+            if (proc->output) {
+                    spec << "{\"$ref\": \"#/components/schemas/" << escapeJsonString(proc->output->type.name) << "\"}";
+                } else {
+                    spec << "{\"type\": \"object\"}";
+                }
+                spec << "\n              }\n";
                 spec << "            }\n";
-                spec << "          }";
-            }
-            spec << "\n        ],\n";
-        }
-        
-        // Only add requestBody for methods that support it
-        if (httpMethod != "GET" && httpMethod != "HEAD" && httpMethod != "DELETE") {
-            spec << "        \"requestBody\": {\n";
-            spec << "          \"required\": true,\n";
-            spec << "          \"content\": {\n";
-            spec << "            \"application/json\": {\n";
-            spec << "              \"schema\": ";
-            if (proc->input) {
-                spec << "{\"$ref\": \"#/components/schemas/" << escapeJsonString(proc->input->type.name) << "\"}";
-            } else {
-                spec << "{\"type\": \"object\"}";
-            }
-            spec << "\n            }\n";
+                spec << "          },\n";
+                spec << "          \"400\": {\n";
+            spec << "            \"description\": \"Invalid request\"\n";
+            spec << "          },\n";
+            spec << "          \"500\": {\n";
+            spec << "            \"description\": \"Execution error\"\n";
             spec << "          }\n";
-            spec << "        },\n";
+            spec << "        }\n";
+            spec << "      }";
         }
-        
-        spec << "        \"responses\": {\n";
-        spec << "          \"200\": {\n";
-        spec << "            \"description\": \"Execution succeeded\",\n";
-        spec << "            \"content\": {\n";
-        spec << "              \"application/json\": {\n";
-        spec << "                \"schema\": ";
-        if (proc->output) {
-            spec << "{\"$ref\": \"#/components/schemas/" << escapeJsonString(proc->output->type.name) << "\"}";
-        } else {
-            spec << "{\"type\": \"object\"}";
-        }
-        spec << "\n              }\n";
-        spec << "            }\n";
-        spec << "          },\n";
-        spec << "          \"400\": {\n";
-        spec << "            \"description\": \"Invalid request\"\n";
-        spec << "          },\n";
-        spec << "          \"500\": {\n";
-        spec << "            \"description\": \"Execution error\"\n";
-        spec << "          }\n";
-        spec << "        }\n";
-        spec << "      }\n";
-        spec << "    }";
+        spec << "\n    }";
     }
 
     spec << R"(
@@ -759,8 +815,8 @@ std::string buildSwaggerSpec(const std::map<std::string, const trx::ast::Procedu
             }
             firstField = false;
             spec << "\n          \"" << escapeJsonString(field.jsonName) << "\": {\n";
-            spec << "            \"type\": \"" << (field.typeName == "STRING" || field.typeName == "CHAR" ? "string" : field.typeName == "INTEGER" || field.typeName == "SMALLINT" ? "integer" : field.typeName == "DECIMAL" ? "number" : field.typeName == "BOOLEAN" ? "boolean" : "string") << "\"";
-            if (field.typeName == "CHAR" || field.typeName == "STRING") {
+            spec << "            \"type\": \"" << mapTrxTypeToOpenApi(field.typeName) << "\"";
+            if (field.typeName == "CHAR" || field.typeName == "_CHAR" || field.typeName == "STRING" || field.typeName == "_STRING") {
                 spec << ",\n            \"maxLength\": " << field.length;
             }
             spec << "\n          }";
@@ -777,6 +833,23 @@ std::string buildSwaggerSpec(const std::map<std::string, const trx::ast::Procedu
         }
         spec << "\n        ]\n";
         spec << "      }";
+    }
+
+    // Add schemas for builtin types
+    const std::vector<std::string> builtinTypes = {
+        "CHAR", "_CHAR", "STRING", "_STRING", "INTEGER", "_INTEGER", 
+        "SMALLINT", "_SMALLINT", "DECIMAL", "_DECIMAL", "BOOLEAN", "_BOOLEAN",
+        "DATE", "_DATE", "TIME", "_TIME", "JSON", "FILE", "_FILE", "BLOB", "_BLOB"
+    };
+    
+    for (const auto &builtinType : builtinTypes) {
+        spec << ",";
+        spec << "\n      \"" << escapeJsonString(builtinType) << "\": {\n";
+        spec << "        \"type\": \"" << mapTrxTypeToOpenApi(builtinType) << "\"";
+        if (builtinType == "CHAR" || builtinType == "_CHAR" || builtinType == "STRING" || builtinType == "_STRING") {
+            spec << ",\n        \"maxLength\": 255"; // Default max length
+        }
+        spec << "\n      }";
     }
 
     spec << R"(
@@ -848,8 +921,9 @@ HttpResponse handleExecuteProcedure(const HttpRequest &request,
                                    const trx::ast::ProcedureDecl *procedure,
                                    trx::runtime::Interpreter &interpreter,
                                    const std::map<std::string, std::string> &pathParams = {}) {
-    // Check HTTP method - use custom method if specified, otherwise default to POST
-    std::string expectedMethod = procedure->httpMethod.value_or("POST");
+    // Check HTTP method - use custom method if specified, otherwise default based on input
+    std::string defaultMethod = "GET"; // procedure->input ? "POST" : "GET";
+    std::string expectedMethod = procedure->httpMethod.value_or(defaultMethod);
     if (request.method != expectedMethod) {
         return makeErrorResponse(405, "Method " + request.method + " not allowed. Expected " + expectedMethod);
     }
@@ -880,20 +954,14 @@ HttpResponse handleExecuteProcedure(const HttpRequest &request,
             input = trx::runtime::JsonValue::object();
         }
 
-        // For functions with explicit parameters, pass path parameters separately
-        // For functions without explicit parameters, merge path parameters into input (backward compatibility)
+        // For functions with path parameters, pass them separately
+        // For functions without path parameters, use the regular execute method
         std::optional<trx::runtime::JsonValue> outputOpt;
-        if (procedure->input) {
-            // Function has explicit parameters - pass path params separately, don't merge into input
+        if (!pathParams.empty()) {
+            // Function has path parameters - pass them separately
             outputOpt = interpreter.execute(procedure->name.baseName, input, pathParams);
         } else {
-            // Function has no explicit parameters - merge path params into input for backward compatibility
-            if (std::holds_alternative<trx::runtime::JsonValue::Object>(input.data)) {
-                auto &obj = std::get<trx::runtime::JsonValue::Object>(input.data);
-                for (const auto &[key, value] : pathParams) {
-                    obj[key] = trx::runtime::JsonValue(value);
-                }
-            }
+            // Function has no path parameters - use regular execute
             outputOpt = interpreter.execute(procedure->name.baseName, input);
         }
         if (procedure->output) {
@@ -1013,7 +1081,11 @@ int runServer(const std::vector<std::filesystem::path> &sourcePaths, ServeOption
     procedureNames.reserve(callableProcedures.size());
     std::map<std::string, const trx::ast::ProcedureDecl *> procedureLookup;
     for (const auto *procedure : callableProcedures) {
-        auto [_, inserted] = procedureLookup.insert_or_assign(procedure->name.baseName, procedure);
+        // Use pathTemplate + httpMethod as key to handle multiple procedures with same path but different methods
+        std::string defaultMethod = "GET"; // procedure->input ? "POST" : "GET";
+        std::string httpMethod = procedure->httpMethod.value_or(defaultMethod);
+        std::string key = procedure->name.pathTemplate + "|" + httpMethod;
+        auto [_, inserted] = procedureLookup.insert_or_assign(key, procedure);
         if (inserted) {
             procedureNames.push_back(procedure->name.baseName);
         }
@@ -1130,16 +1202,11 @@ int runServer(const std::vector<std::filesystem::path> &sourcePaths, ServeOption
                 response.body = oss.str();
             } else {
                 // Check if path matches a procedure
-                auto matchResult = matchPathTemplate(request.path, procedureLookup);
+                auto matchResult = matchPathTemplate(request.path, request.method, procedureLookup);
                 if (matchResult) {
-                    const auto &[procName, pathParams] = *matchResult;
-                    const auto procIt = procedureLookup.find(procName);
-                    if (procIt != procedureLookup.end()) {
-                        std::lock_guard<std::mutex> lock(interpreterMutex);
-                        response = handleExecuteProcedure(request, procIt->second, interpreter, pathParams);
-                    } else {
-                        response = makeErrorResponse(404, "Route not found");
-                    }
+                    const auto &[procedure, pathParams] = *matchResult;
+                    std::lock_guard<std::mutex> lock(interpreterMutex);
+                    response = handleExecuteProcedure(request, procedure, interpreter, pathParams);
                 } else {
                     response = makeErrorResponse(404, "Route not found");
                 }

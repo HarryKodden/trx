@@ -5,10 +5,10 @@
 TYPE PERSON FROM TABLE person;
 
 // Initialize database with sample data
-PROCEDURE init_person_table() {
+EXPORT PROCEDURE init_person_table() {
     EXEC SQL CREATE TABLE IF NOT EXISTS person (
         id INTEGER PRIMARY KEY,
-        name VARCHAR(64) NOT NULL,
+        name TEXT NOT NULL,
         age INTEGER,
         active BOOLEAN DEFAULT TRUE,
         salary DECIMAL(10,2)
@@ -26,14 +26,121 @@ PROCEDURE init_person_table() {
 // ============================================================================
 
 // GET /persons - Retrieve all persons
-EXPORT METHOD GET FUNCTION persons() : INTEGER {
-    RETURN 42;
+EXPORT METHOD GET FUNCTION persons() : JSON {
+    VAR count INTEGER;
+    EXEC SQL DECLARE count_cursor CURSOR FOR SELECT COUNT(*) FROM person;
+    EXEC SQL OPEN count_cursor;
+    EXEC SQL FETCH count_cursor INTO :count;
+    EXEC SQL CLOSE count_cursor;
+    
+    RETURN {"count": count, "message": "Database has data"};
 }
 
-EXPORT METHOD GET FUNCTION person/{id: INTEGER}() : INTEGER {
-    RETURN id;
+// GET /person/{id} - Retrieve a specific person by ID
+EXPORT METHOD GET FUNCTION person/{id: INTEGER}() : JSON {
+    VAR person_id INTEGER := id;
+    VAR name STRING;
+    VAR age INTEGER;
+    VAR active BOOLEAN;
+    VAR salary DECIMAL;
+
+    EXEC SQL DECLARE person_cursor CURSOR FOR SELECT name, age, active, salary FROM person WHERE id = :person_id;
+    EXEC SQL OPEN person_cursor;
+    EXEC SQL FETCH person_cursor INTO :name, :age, :active, :salary;
+
+    IF sqlcode = 100 {
+        // Person not found
+        EXEC SQL CLOSE person_cursor;
+        RETURN "Person not found";
+    }
+
+    EXEC SQL CLOSE person_cursor;
+    RETURN "Person found: " + name;
 }
 
-EXPORT METHOD POST FUNCTION test(x: INTEGER) : INTEGER {
-    RETURN x;
+// POST /persons - Create a new person
+EXPORT METHOD POST FUNCTION persons(person_data: JSON) : JSON {
+    VAR new_id INTEGER;
+    VAR name STRING := person_data.name;
+    VAR age INTEGER := person_data.age;
+    VAR active BOOLEAN := person_data.active;
+    VAR salary DECIMAL := person_data.salary;
+
+    // Insert the new person
+    EXEC SQL INSERT INTO person (name, age, active, salary) VALUES (:name, :age, :active, :salary);
+
+    // Get the auto-generated ID (assuming SQLite auto-increment)
+    EXEC SQL DECLARE id_cursor CURSOR FOR SELECT last_insert_rowid();
+    EXEC SQL OPEN id_cursor;
+    EXEC SQL FETCH id_cursor INTO :new_id;
+    EXEC SQL CLOSE id_cursor;
+
+    RETURN {
+        "id": new_id,
+        "name": name,
+        "age": age,
+        "active": active,
+        "salary": salary,
+        "message": "Person created successfully"
+    };
+}
+
+// PUT /person/{id} - Update an existing person
+EXPORT METHOD PUT FUNCTION person/{id: INTEGER}(person_data: JSON) : JSON {
+    VAR person_id INTEGER := id;
+    VAR name STRING := person_data.name;
+    VAR age INTEGER := person_data.age;
+    VAR active BOOLEAN := person_data.active;
+    VAR salary DECIMAL := person_data.salary;
+
+    // Check if person exists
+    VAR exists_check INTEGER;
+    EXEC SQL DECLARE exists_cursor CURSOR FOR SELECT 1 FROM person WHERE id = :person_id;
+    EXEC SQL OPEN exists_cursor;
+    EXEC SQL FETCH exists_cursor INTO :exists_check;
+
+    IF sqlcode = 100 {
+        EXEC SQL CLOSE exists_cursor;
+        RETURN {"error": "Person not found", "id": person_id};
+    }
+
+    EXEC SQL CLOSE exists_cursor;
+
+    // Update the person
+    EXEC SQL UPDATE person SET name = :name, age = :age, active = :active, salary = :salary WHERE id = :person_id;
+
+    RETURN {
+        "id": person_id,
+        "name": name,
+        "age": age,
+        "active": active,
+        "salary": salary,
+        "message": "Person updated successfully"
+    };
+}
+
+// DELETE /person/{id} - Delete a person
+EXPORT METHOD DELETE FUNCTION person/{id: INTEGER}() : JSON {
+    VAR person_id INTEGER := id;
+
+    // Check if person exists
+    VAR exists_check INTEGER;
+    EXEC SQL DECLARE exists_cursor CURSOR FOR SELECT 1 FROM person WHERE id = :person_id;
+    EXEC SQL OPEN exists_cursor;
+    EXEC SQL FETCH exists_cursor INTO :exists_check;
+
+    IF sqlcode = 100 {
+        EXEC SQL CLOSE exists_cursor;
+        RETURN {"error": "Person not found", "id": person_id};
+    }
+
+    EXEC SQL CLOSE exists_cursor;
+
+    // Delete the person
+    EXEC SQL DELETE FROM person WHERE id = :person_id;
+
+    RETURN {
+        "id": person_id,
+        "message": "Person deleted successfully"
+    };
 }
