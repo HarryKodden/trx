@@ -740,6 +740,14 @@ void executeVariableDeclaration(const trx::ast::VariableDeclarationStatement &va
             // Initialize record variables as empty objects
             initialValue = JsonValue(JsonValue::Object{});
         }
+    } else if (varDecl.tableName.has_value()) {
+        // Initialize table-based variables from database schema
+        auto columns = context.interpreter.db().getTableSchema(*varDecl.tableName);
+        JsonValue::Object obj;
+        for (const auto& column : columns) {
+            obj[column.name] = JsonValue(nullptr);
+        }
+        initialValue = JsonValue(obj);
     }
     if (context.isGlobal) {
         context.interpreter.globalVariables()[varDecl.name.name] = initialValue;

@@ -302,7 +302,7 @@ std::vector<TableColumn> SQLiteDriver::getTableSchema(const std::string& tableNa
                 col.typeName = "CHAR"; // Default
             }
             
-            col.isNullable = !row[3].asBool(); // notnull (0 = nullable, 1 = not null)
+            col.isNullable = !row[3].asNumber(); // notnull (0 = nullable, 1 = not null)
             col.isPrimaryKey = row[5].asNumber() > 0; // pk
             
             columns.push_back(col);
