@@ -2,7 +2,7 @@
 // Demonstrates REST API implementation using TRX grammar
 
 // Define the PERSON record type mapped to the database table
-TYPE PERSON FROM TABLE person;
+// TYPE PERSON FROM TABLE person;
 
 // Initialize database with sample data
 EXPORT PROCEDURE init_person_table() {
@@ -44,18 +44,18 @@ EXPORT METHOD GET FUNCTION person/{id: INTEGER}() : JSON {
     VAR active BOOLEAN;
     VAR salary DECIMAL;
 
-    EXEC SQL DECLARE person_cursor CURSOR FOR SELECT name, age, active, salary FROM person WHERE id = :person_id;
+    EXEC SQL DECLARE person_cursor CURSOR FOR SELECT name, age, active, salary FROM person WHERE id = :id;
     EXEC SQL OPEN person_cursor;
     EXEC SQL FETCH person_cursor INTO :name, :age, :active, :salary;
 
     IF sqlcode = 100 {
         // Person not found
         EXEC SQL CLOSE person_cursor;
-        RETURN "Person not found";
+        RETURN {"error": "Person not found", "id": person_id};
     }
 
     EXEC SQL CLOSE person_cursor;
-    RETURN "Person found: " + name;
+    RETURN {"message": "Person found", "name": name};
 }
 
 // POST /persons - Create a new person

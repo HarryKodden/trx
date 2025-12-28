@@ -17,6 +17,7 @@ public:
 
     std::optional<JsonValue> execute(const std::string &procedureName, const JsonValue &input);
     std::optional<JsonValue> execute(const std::string &procedureName, const JsonValue &input, const std::map<std::string, std::string> &pathParams);
+    std::optional<JsonValue> execute(const ast::ProcedureDecl *procedure, const JsonValue &input, const std::map<std::string, std::string> &pathParams = {});
 
     const ast::ProcedureDecl* getProcedure(const std::string &name) const;
     const ast::RecordDecl* getRecord(const std::string &name) const;

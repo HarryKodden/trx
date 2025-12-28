@@ -1411,4 +1411,125 @@ std::optional<JsonValue> Interpreter::execute(const std::string &procedureName, 
     }
 }
 
+std::optional<JsonValue> Interpreter::execute(const ast::ProcedureDecl *procedure, const JsonValue &input, const std::map<std::string, std::string> &pathParams) {
+    // Check if we're already in a transaction
+    bool alreadyInTransaction = dbDriver_->isInTransaction();
+    std::string savepointName;
+    
+    if (alreadyInTransaction) {
+        // Use a savepoint for nested transaction
+        savepointName = "trx_savepoint_" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
+        dbDriver_->executeSql("SAVEPOINT " + savepointName);
+    } else {
+        // Begin a new transaction
+        dbDriver_->beginTransaction();
+    }
+
+    try {
+        // Create execution context
+        ExecutionContext context{*this, {}, false, std::nullopt, false, false, std::nullopt};
+        context.isFunction = procedure->isFunction;
+        
+        // Automatically instantiate path parameters as local variables
+        for (size_t i = 0; i < procedure->name.pathParameters.size(); ++i) {
+            const auto &paramDecl = procedure->name.pathParameters[i];
+            std::string paramName = paramDecl.name.name;
+            std::string paramType = paramDecl.type.name;
+            
+            // Find the corresponding path parameter value
+            auto pathParamIt = pathParams.find(paramName);
+            if (pathParamIt != pathParams.end()) {
+                std::string valueStr = pathParamIt->second;
+                JsonValue paramValue;
+                
+                // Convert string value to appropriate type based on parameter type
+                if (paramType == "INTEGER") {
+                    try {
+                        paramValue = JsonValue(std::stoi(valueStr));
+                    } catch (...) {
+                        paramValue = JsonValue(0); // Default to 0 on conversion error
+                    }
+                } else if (paramType == "DECIMAL" || paramType == "DOUBLE") {
+                    try {
+                        paramValue = JsonValue(std::stod(valueStr));
+                    } catch (...) {
+                        paramValue = JsonValue(0.0); // Default to 0.0 on conversion error
+                    }
+                } else if (paramType == "BOOLEAN") {
+                    paramValue = JsonValue(valueStr == "true" || valueStr == "1");
+                } else {
+                    // Default to string for other types
+                    paramValue = JsonValue(valueStr);
+                }
+                
+                context.variables[paramName] = paramValue;
+            }
+        }
+        
+        // Bind input parameters
+        if (procedure->input) {
+            if (!std::holds_alternative<JsonValue::Object>(input.data)) {
+                throw std::runtime_error("Input must be a JSON object");
+            }
+            context.variables[procedure->input->name.name] = input;
+        }
+        
+        // Execute the procedure body
+        for (const auto &stmt : procedure->body) {
+            executeStatement(stmt, context);
+            if (context.returned) {
+                break;
+            }
+        }
+        
+        if (procedure->output) {
+            throw std::runtime_error("Function must return a value");
+        }
+        // Commit on successful completion
+        if (alreadyInTransaction) {
+            dbDriver_->executeSql("RELEASE SAVEPOINT " + savepointName);
+        } else {
+            dbDriver_->commitTransaction();
+        }
+    } catch (const ReturnException &ret) {
+        // For functions, return the value
+        if (procedure->output) {
+            // The return validation is already done in executeReturn
+            // Commit on successful completion (even with return)
+            if (alreadyInTransaction) {
+                dbDriver_->executeSql("RELEASE SAVEPOINT " + savepointName);
+            } else {
+                dbDriver_->commitTransaction();
+            }
+            return ret.value;
+        } else {
+            // For procedures, RETURN just ends execution (no value returned)
+            if (alreadyInTransaction) {
+                dbDriver_->executeSql("RELEASE SAVEPOINT " + savepointName);
+            } else {
+                dbDriver_->commitTransaction();
+            }
+            return std::nullopt;  // Procedures don't return values
+        }
+    } catch (...) {
+        // Rollback on any exception
+        if (alreadyInTransaction) {
+            dbDriver_->executeSql("ROLLBACK TO SAVEPOINT " + savepointName);
+        } else {
+            try {
+                dbDriver_->rollbackTransaction();
+            } catch (...) {
+                // Ignore rollback errors
+            }
+        }
+        throw;
+    }
+
+    if (procedure->output) {
+        // This should not happen - functions should return via ReturnException
+        throw std::runtime_error("Function did not return a value");
+    }
+    return std::nullopt;
+}
+
 } // namespace trx::runtime

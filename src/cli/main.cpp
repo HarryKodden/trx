@@ -196,6 +196,8 @@ int main(int argc, char *argv[]) {
         if (sourcePaths.empty()) {
             sourcePaths.push_back(".");
         }
+        // Use a file-based database for the server so data persists between requests
+        dbConfig.databasePath = "trx_server.db";
         serveOptions.dbConfig = dbConfig;
         return trx::cli::runServer(sourcePaths, serveOptions);
     }

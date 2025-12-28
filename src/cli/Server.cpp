@@ -57,7 +57,7 @@ std::optional<std::pair<const trx::ast::ProcedureDecl *, std::map<std::string, s
         const std::string &templatePath = proc->name.pathTemplate;
         
         // Check HTTP method first
-        std::string defaultMethod = "GET"; // proc->input ? "POST" : "GET";
+        std::string defaultMethod = proc->input ? "POST" : "GET";
         std::string expectedMethod = proc->httpMethod.value_or(defaultMethod);
         if (requestMethod != expectedMethod) {
             continue; // Method doesn't match, skip this procedure
@@ -922,7 +922,7 @@ HttpResponse handleExecuteProcedure(const HttpRequest &request,
                                    trx::runtime::Interpreter &interpreter,
                                    const std::map<std::string, std::string> &pathParams = {}) {
     // Check HTTP method - use custom method if specified, otherwise default based on input
-    std::string defaultMethod = "GET"; // procedure->input ? "POST" : "GET";
+    std::string defaultMethod = procedure->input ? "POST" : "GET";
     std::string expectedMethod = procedure->httpMethod.value_or(defaultMethod);
     if (request.method != expectedMethod) {
         return makeErrorResponse(405, "Method " + request.method + " not allowed. Expected " + expectedMethod);
@@ -954,16 +954,8 @@ HttpResponse handleExecuteProcedure(const HttpRequest &request,
             input = trx::runtime::JsonValue::object();
         }
 
-        // For functions with path parameters, pass them separately
-        // For functions without path parameters, use the regular execute method
-        std::optional<trx::runtime::JsonValue> outputOpt;
-        if (!pathParams.empty()) {
-            // Function has path parameters - pass them separately
-            outputOpt = interpreter.execute(procedure->name.baseName, input, pathParams);
-        } else {
-            // Function has no path parameters - use regular execute
-            outputOpt = interpreter.execute(procedure->name.baseName, input);
-        }
+        // Execute the procedure using the procedure pointer
+        std::optional<trx::runtime::JsonValue> outputOpt = interpreter.execute(procedure, input, pathParams);
         if (procedure->output) {
             if (!outputOpt) {
                 return makeErrorResponse(500, "Function does not return a value");
@@ -1082,7 +1074,7 @@ int runServer(const std::vector<std::filesystem::path> &sourcePaths, ServeOption
     std::map<std::string, const trx::ast::ProcedureDecl *> procedureLookup;
     for (const auto *procedure : callableProcedures) {
         // Use pathTemplate + httpMethod as key to handle multiple procedures with same path but different methods
-        std::string defaultMethod = "GET"; // procedure->input ? "POST" : "GET";
+        std::string defaultMethod = procedure->input ? "POST" : "GET";
         std::string httpMethod = procedure->httpMethod.value_or(defaultMethod);
         std::string key = procedure->name.pathTemplate + "|" + httpMethod;
         auto [_, inserted] = procedureLookup.insert_or_assign(key, procedure);

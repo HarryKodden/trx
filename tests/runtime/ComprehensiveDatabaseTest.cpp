@@ -150,19 +150,20 @@ bool runComprehensiveDatabaseTest() {
 
             EXEC SQL OPEN ordered_cursor;
 
+            // Initial fetch
+            var first_name CHAR(50);
+            var last_name CHAR(50);
+            EXEC SQL FETCH ordered_cursor INTO :first_name, :last_name;
+
             WHILE (sqlcode = 0) {
-                var first_name CHAR(50);
-                var last_name CHAR(50);
+                var row JSON := {
+                    "first_name": first_name,
+                    "last_name": last_name
+                };
+                append(results, row);
 
+                // Fetch next row
                 EXEC SQL FETCH ordered_cursor INTO :first_name, :last_name;
-
-                if (sqlcode = 0) {
-                    var row JSON := {
-                        "first_name": first_name,
-                        "last_name": last_name
-                    };
-                    append(results, row);
-                }
             }
 
             EXEC SQL CLOSE ordered_cursor;

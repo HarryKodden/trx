@@ -3,6 +3,7 @@
 #include <sqlite3.h>
 #include <iostream>
 #include <sstream>
+#include <cmath>
 
 namespace trx::runtime {
 
@@ -321,7 +322,12 @@ void SQLiteDriver::bindParameters(sqlite3_stmt* stmt, const std::vector<SqlParam
         } else if (param.value.isBool()) {
             sqlite3_bind_int(stmt, paramIndex, param.value.asBool() ? 1 : 0);
         } else if (param.value.isNumber()) {
-            sqlite3_bind_double(stmt, paramIndex, param.value.asNumber());
+            double num = param.value.asNumber();
+            if (num == std::floor(num) && num >= INT_MIN && num <= INT_MAX) {
+                sqlite3_bind_int64(stmt, paramIndex, static_cast<long long>(num));
+            } else {
+                sqlite3_bind_double(stmt, paramIndex, num);
+            }
         } else if (param.value.isString()) {
             const std::string& str = param.value.asString();
             sqlite3_bind_text(stmt, paramIndex, str.c_str(), str.size(), SQLITE_TRANSIENT);
