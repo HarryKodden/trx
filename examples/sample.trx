@@ -5,8 +5,9 @@
 // TYPE PERSON FROM TABLE person;
 
 // Initialize database with sample data
-EXPORT PROCEDURE init_person_table() {
-    EXEC SQL CREATE TABLE IF NOT EXISTS person (
+EXPORT METHOD POST FUNCTION init_person_table() : JSON {
+    EXEC SQL DROP TABLE IF EXISTS person;
+    EXEC SQL CREATE TABLE person (
         id INTEGER PRIMARY KEY,
         name TEXT NOT NULL,
         age INTEGER,
@@ -14,11 +15,13 @@ EXPORT PROCEDURE init_person_table() {
         salary DECIMAL(10,2)
     );
 
-    // Insert sample data if table is empty
+    // Insert sample data
     EXEC SQL INSERT INTO person (id, name, age, active, salary) VALUES
         (1, 'Alice Johnson', 30, TRUE, 75000.00),
         (2, 'Bob Smith', 25, TRUE, 50000.00),
         (3, 'Charlie Brown', 35, FALSE, 60000.00);
+    
+    RETURN { "status": "initialized" };
 }
 
 // GET /debug_persons - Debug: show all persons with IDs
@@ -45,10 +48,10 @@ EXPORT METHOD GET FUNCTION persons() : JSON {
     VAR result JSON := { "persons": [] };
 
     VAR count INTEGER;
-    EXEC SQL DECLARE persons CURSOR FOR SELECT  name, age, active, salary FROM person;
+    EXEC SQL DECLARE persons CURSOR FOR SELECT id, name, age, active, salary FROM person;
     EXEC SQL OPEN persons;
     WHILE sqlcode = 0 {
-        EXEC SQL FETCH persons INTO :person.name, :person.age, :person.active, :person.salary;
+        EXEC SQL FETCH persons INTO :person.id, :person.name, :person.age, :person.active, :person.salary;
         if sqlcode = 0 {
             append(result.persons, person);
         }

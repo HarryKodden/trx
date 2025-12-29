@@ -67,6 +67,18 @@ void PostgreSQLDriver::initialize() {
 }
 
 void PostgreSQLDriver::executeSql(const std::string& sql, const std::vector<SqlParameter>& params) {
+    // Convert ? placeholders to $1, $2, etc. for PostgreSQL
+    std::string convertedSql = sql;
+    size_t pos = 0;
+    int paramIndex = 1;
+    while ((pos = convertedSql.find('?', pos)) != std::string::npos) {
+        std::string replacement = "$" + std::to_string(paramIndex++);
+        convertedSql.replace(pos, 1, replacement);
+        pos += replacement.length();
+    }
+
+    std::cout << "SQL EXEC: " << convertedSql << std::endl;
+
     std::vector<const char*> paramValues;
     std::vector<int> paramLengths;
     std::vector<int> paramFormats;
@@ -76,9 +88,19 @@ void PostgreSQLDriver::executeSql(const std::string& sql, const std::vector<SqlP
             paramLengths.push_back(std::get<std::string>(param.value.data).size());
             paramFormats.push_back(0); // text
         } else if (std::holds_alternative<double>(param.value.data)) {
-            std::string val = std::to_string(std::get<double>(param.value.data));
-            paramValues.push_back(val.c_str());
-            paramLengths.push_back(val.size());
+            double num = std::get<double>(param.value.data);
+            // Check if it's a whole number (integer)
+            if (num == static_cast<long long>(num)) {
+                // Format as integer
+                std::string val = std::to_string(static_cast<long long>(num));
+                paramValues.push_back(val.c_str());
+                paramLengths.push_back(val.size());
+            } else {
+                // Format as decimal
+                std::string val = std::to_string(num);
+                paramValues.push_back(val.c_str());
+                paramLengths.push_back(val.size());
+            }
             paramFormats.push_back(0);
         } else if (std::holds_alternative<bool>(param.value.data)) {
             paramValues.push_back(std::get<bool>(param.value.data) ? "true" : "false");
@@ -91,7 +113,7 @@ void PostgreSQLDriver::executeSql(const std::string& sql, const std::vector<SqlP
         }
     }
 
-    PGresult* res = PQexecParams(conn_, sql.c_str(), params.size(),
+    PGresult* res = PQexecParams(conn_, convertedSql.c_str(), params.size(),
                                  nullptr, paramValues.data(), paramLengths.data(),
                                  paramFormats.data(), 0);
     checkPGresult(res, conn_, "executeSql");
@@ -162,7 +184,20 @@ void PostgreSQLDriver::openCursor(const std::string& name, const std::string& sq
 
     std::string declareSql = "DECLARE " + name + " CURSOR FOR " + sql;
     executeSql(declareSql, params);
+    
+    // In PostgreSQL, DECLARE ... CURSOR FOR ... automatically opens the cursor
+    // No separate OPEN statement needed
     cursors_[name] = true;
+}
+
+void PostgreSQLDriver::openDeclaredCursor(const std::string& name) {
+    auto it = cursors_.find(name);
+    if (it == cursors_.end()) {
+        throw std::runtime_error("Cursor not declared: " + name);
+    }
+    
+    // In PostgreSQL, DECLARE ... CURSOR FOR ... automatically opens the cursor
+    // No separate OPEN statement needed
 }
 
 bool PostgreSQLDriver::cursorNext(const std::string& name) {

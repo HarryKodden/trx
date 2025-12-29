@@ -115,6 +115,10 @@ void SQLiteDriver::openCursor(const std::string& name, const std::string& sql, c
         cursors_[name] = stmt;
     }
 
+void SQLiteDriver::openDeclaredCursor(const std::string& /*name*/) {
+        // SQLite doesn't need separate OPEN - cursor is opened when prepared
+    }
+
 bool SQLiteDriver::cursorNext(const std::string& name) {
         auto it = cursors_.find(name);
         if (it == cursors_.end()) {

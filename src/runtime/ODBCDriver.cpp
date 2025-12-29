@@ -240,6 +240,10 @@ void ODBCDriver::openCursor(const std::string& name, const std::string& sql, con
     }
 }
 
+void ODBCDriver::openDeclaredCursor(const std::string& /*name*/) {
+    // ODBC doesn't need separate OPEN - cursor is opened when executed
+}
+
 bool ODBCDriver::cursorNext(const std::string& name) {
     auto it = statements_.find(name);
     if (it == statements_.end()) {

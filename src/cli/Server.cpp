@@ -998,7 +998,27 @@ HttpResponse handleExecuteProcedure(const HttpRequest &request,
     } catch (const JsonParseError &error) {
         return makeErrorResponse(400, error.what());
     } catch (const trx::runtime::TrxException &error) {
-        return makeErrorResponse(400, error.what());
+        // Check if it's a TrxThrowException to get the actual thrown value
+        if (const trx::runtime::TrxThrowException* throwEx = dynamic_cast<const trx::runtime::TrxThrowException*>(&error)) {
+            // Convert the thrown value to a string for the error message
+            std::string errorMessage;
+            const auto& thrownValue = throwEx->getThrownValue();
+            if (thrownValue.isString()) {
+                errorMessage = thrownValue.asString();
+            } else {
+                // For non-string values, convert to string representation
+                std::stringstream ss;
+                ss << thrownValue;
+                errorMessage = ss.str();
+                // Remove quotes if it's a simple string
+                if (errorMessage.size() >= 2 && errorMessage.front() == '"' && errorMessage.back() == '"') {
+                    errorMessage = errorMessage.substr(1, errorMessage.size() - 2);
+                }
+            }
+            return makeErrorResponse(400, errorMessage);
+        } else {
+            return makeErrorResponse(400, error.what());
+        }
     } catch (const std::exception &error) {
         return makeErrorResponse(500, error.what());
     }

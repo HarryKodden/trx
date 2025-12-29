@@ -22,6 +22,7 @@ public:
     void executeSql(const std::string& sql, const std::vector<SqlParameter>& params = {}) override;
     std::vector<std::vector<SqlValue>> querySql(const std::string& sql, const std::vector<SqlParameter>& params = {}) override;
     void openCursor(const std::string& name, const std::string& sql, const std::vector<SqlParameter>& params = {}) override;
+    void openDeclaredCursor(const std::string& name) override;
     bool cursorNext(const std::string& name) override;
     std::vector<SqlValue> cursorGetRow(const std::string& name) override;
     void closeCursor(const std::string& name) override;
