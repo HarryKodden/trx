@@ -49,13 +49,19 @@ struct ExecutionContext {
     std::optional<std::string> outputType;
 };
 
+void debugPrint(const std::string& message) {
+    if (getenv("DEBUG")) {
+        std::cout << message << std::endl;
+    }
+}
+
 JsonValue evaluateExpression(const trx::ast::ExpressionPtr &expression, ExecutionContext &context);
 JsonValue resolveVariableValue(const trx::ast::VariableExpression &variable, ExecutionContext &context);
 JsonValue &resolveVariableTarget(const trx::ast::VariableExpression &variable, ExecutionContext &context);
 
 void executeStatements(const trx::ast::StatementList &statements, ExecutionContext &context);
 
-void extractHostVariables(std::string &sql, ExecutionContext &context, std::unordered_map<std::string, JsonValue> &hostVars);
+std::unordered_map<std::string, JsonValue> resolveHostVariablesFromAst(const std::vector<trx::ast::VariableExpression>& hostVariables, ExecutionContext &context);
 
 std::vector<SqlParameter> convertHostVarsToParams(const std::unordered_map<std::string, JsonValue>& hostVars) {
     std::vector<SqlParameter> params;
@@ -63,6 +69,22 @@ std::vector<SqlParameter> convertHostVarsToParams(const std::unordered_map<std::
         params.push_back({name, value});
     }
     return params;
+}
+
+std::unordered_map<std::string, JsonValue> resolveHostVariablesFromAst(const std::vector<trx::ast::VariableExpression>& hostVariables, ExecutionContext &context) {
+    std::unordered_map<std::string, JsonValue> hostVars;
+    int paramIndex = 1;
+    for (const auto& varExpr : hostVariables) {
+        try {
+            JsonValue value = resolveVariableValue(varExpr, context);
+            hostVars[std::to_string(paramIndex)] = value;
+            ++paramIndex;
+        } catch (const std::exception& e) {
+            std::cerr << "Failed to resolve host variable: " << e.what() << std::endl;
+            // Continue with other variables
+        }
+    }
+    return hostVars;
 }
 
 [[maybe_unused]] std::optional<std::string> formatSourceLocation(const trx::ast::SourceLocation& location) {
@@ -241,25 +263,25 @@ JsonValue evaluateFunctionCall(const trx::ast::FunctionCallExpression &call, Exe
     if (call.functionName == "debug") {
         if (call.arguments.size() != 1) throw std::runtime_error("debug function takes 1 argument");
         JsonValue arg = evaluateExpression(call.arguments[0], context);
-        std::cout << "DEBUG: " << arg << std::endl;
+        // std::cout << "DEBUG: " << arg << std::endl;
         return JsonValue(nullptr); // Logging functions return null
     }
     if (call.functionName == "info") {
         if (call.arguments.size() != 1) throw std::runtime_error("info function takes 1 argument");
         JsonValue arg = evaluateExpression(call.arguments[0], context);
-        std::cout << "INFO: " << arg << std::endl;
+        // std::cout << "INFO: " << arg << std::endl;
         return JsonValue(nullptr); // Logging functions return null
     }
     if (call.functionName == "error") {
         if (call.arguments.size() != 1) throw std::runtime_error("error function takes 1 argument");
         JsonValue arg = evaluateExpression(call.arguments[0], context);
-        std::cerr << "ERROR: " << arg << std::endl;
+        // std::cerr << "ERROR: " << arg << std::endl;
         return JsonValue(nullptr); // Logging functions return null
     }
     if (call.functionName == "trace") {
         if (call.arguments.size() != 1) throw std::runtime_error("trace function takes 1 argument");
         JsonValue arg = evaluateExpression(call.arguments[0], context);
-        std::cout << "TRACE: " << arg << std::endl;
+        // std::cout << "TRACE: " << arg << std::endl;
         return JsonValue(nullptr); // Logging functions return null
     }
     if (call.functionName == "http") {
@@ -702,14 +724,14 @@ JsonValue &resolveVariableTarget(const trx::ast::VariableExpression &variable, E
 }
 
 void executeAssignment(const trx::ast::AssignmentStatement &assignment, ExecutionContext &context) {
-    std::cout << "ASSIGNMENT: evaluating value for assignment" << std::endl;
+    debugPrint("ASSIGNMENT: evaluating value for assignment");
     JsonValue value = evaluateExpression(assignment.value, context);
-    std::cout << "ASSIGNMENT: value evaluated to " << value << std::endl;
-    std::cout << "ASSIGNMENT: resolving target" << std::endl;
+    debugPrint("ASSIGNMENT: value evaluated to " + jsonValueToString(value));
+    debugPrint("ASSIGNMENT: resolving target");
     JsonValue &target = resolveVariableTarget(assignment.target, context);
-    std::cout << "ASSIGNMENT: target resolved, assigning" << std::endl;
+    debugPrint("ASSIGNMENT: target resolved, assigning");
     target = std::move(value);
-    std::cout << "ASSIGNMENT: assignment complete" << std::endl;
+    debugPrint("ASSIGNMENT: assignment complete");
 }
 
 void executeVariableDeclaration(const trx::ast::VariableDeclarationStatement &varDecl, ExecutionContext &context) {
@@ -883,7 +905,7 @@ void executeSort(const trx::ast::SortStatement &sortStmt, ExecutionContext &cont
 
 void executeTrace(const trx::ast::TraceStatement &trace, ExecutionContext &context) {
     JsonValue val = evaluateExpression(trace.value, context);
-    std::cout << "TRACE: " << val << std::endl;
+    debugPrint("TRACE: " + jsonValueToString(val));
 }
 
 void executeExpression(const trx::ast::ExpressionStatement &exprStmt, ExecutionContext &context) {
@@ -904,12 +926,12 @@ void executeSystem(const trx::ast::SystemStatement &systemStmt, ExecutionContext
 
 void executeBatch(const trx::ast::BatchStatement &batchStmt, ExecutionContext &context) {
     // For now, just print that batch is called
-    std::cout << "BATCH: " << batchStmt.name;
+    std::string msg = "BATCH: " + batchStmt.name;
     if (batchStmt.argument) {
         JsonValue arg = resolveVariableValue(*batchStmt.argument, context);
-        std::cout << " with argument: " << arg;
+        msg += " with argument: " + jsonValueToString(arg);
     }
-    std::cout << std::endl;
+    debugPrint(msg);
     // In a real implementation, this would execute the batch process
 }
 
@@ -945,40 +967,14 @@ void executeValidate(const trx::ast::ValidateStatement &validateStmt, ExecutionC
     bool valid = std::holds_alternative<bool>(ruleResult.data) && std::get<bool>(ruleResult.data);
     const trx::ast::ValidationOutcome &outcome = valid ? validateStmt.success : validateStmt.failure;
     // For now, just print
-    std::cout << "VALIDATE: " << (valid ? "SUCCESS" : "FAILURE") << " code=" << outcome.code << " message=\"" << outcome.message << "\"" << std::endl;
+    debugPrint("VALIDATE: " + std::string(valid ? "SUCCESS" : "FAILURE") + " code=" + std::to_string(outcome.code) + " message=\"" + outcome.message + "\"");
     // Set final outcome
     // Perhaps set a variable, but for now, ignore
 }
 
-void extractHostVariables(std::string &sql, ExecutionContext &context, std::unordered_map<std::string, JsonValue> &hostVars) {
-    size_t pos = 0;
-    int paramIndex = 1;
-    while ((pos = sql.find(':', pos)) != std::string::npos) {
-        size_t end = pos + 1;
-        while (end < sql.size() && (std::isalnum(sql[end]) || sql[end] == '.' || sql[end] == '_')) {
-            ++end;
-        }
-        if (end > pos + 1) {
-            std::string varName = sql.substr(pos + 1, end - pos - 1);
-            // Replace :var with ? in SQL
-            sql.replace(pos, end - pos, "?");
-            
-            // Extract the variable value
-            try {
-                trx::ast::VariableSegment segment{varName, std::nullopt};
-                trx::ast::VariableExpression varExpr{{segment}};
-                JsonValue value = resolveVariableValue(varExpr, context);
-                hostVars[std::to_string(paramIndex)] = value;
-                ++paramIndex;
-            } catch (const std::exception &) {
-                // Variable not found, keep as is
-            }
-        }
-        pos = end;
-    }
-}
 
 std::string extractSelectFromDeclare(const std::string &declareSql) {
+    debugPrint("DEBUG extractSelectFromDeclare: Input: '" + declareSql + "'");
     std::string upper = declareSql;
     std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
     
@@ -994,41 +990,40 @@ std::string extractSelectFromDeclare(const std::string &declareSql) {
         ++selectPos;
     }
     
-    return declareSql.substr(selectPos);
+    std::string result = declareSql.substr(selectPos);
+    return result;
 }
 void executeSql(const trx::ast::SqlStatement &sqlStmt, ExecutionContext &context) {
     switch (sqlStmt.kind) {
         case trx::ast::SqlStatementKind::ExecImmediate: {
             std::string sql = sqlStmt.sql;
-            // Extract host variables
-            std::unordered_map<std::string, JsonValue> hostVars;
-            extractHostVariables(sql, context, hostVars);
+            // Extract host variables from AST
+            std::unordered_map<std::string, JsonValue> hostVars = resolveHostVariablesFromAst(sqlStmt.hostVariables, context);
 
             // Execute using database driver
             auto params = convertHostVarsToParams(hostVars);
             try {
                 context.interpreter.db().executeSql(sql, params);
                 context.interpreter.setSqlCode(0.0); // Success
-                std::cout << "SQL EXEC: " << sqlStmt.sql << std::endl;
+                debugPrint("SQL EXEC: " + sqlStmt.sql);
             } catch (const std::exception& e) {
                 context.interpreter.setSqlCode(-1.0); // Error
-                std::cerr << "SQL execution failed: " << e.what() << std::endl;
+                // std::cerr << "SQL execution failed: " << e.what() << std::endl;
             }
             break;
         }
         
         case trx::ast::SqlStatementKind::DeclareCursor: {
             std::string selectSql = extractSelectFromDeclare(sqlStmt.sql);
-            std::unordered_map<std::string, JsonValue> hostVars;
-            extractHostVariables(selectSql, context, hostVars);
+            std::unordered_map<std::string, JsonValue> hostVars = resolveHostVariablesFromAst(sqlStmt.hostVariables, context);
 
             try {
                 context.interpreter.db().openCursor(sqlStmt.identifier, selectSql, convertHostVarsToParams(hostVars));
                 context.interpreter.setSqlCode(0.0); // Success
-                std::cout << "SQL DECLARE CURSOR: " << sqlStmt.identifier << " AS " << selectSql << std::endl;
+                debugPrint("SQL DECLARE CURSOR: " + sqlStmt.identifier + " AS " + selectSql);
             } catch (const std::exception& e) {
                 context.interpreter.setSqlCode(-1.0); // Error
-                std::cerr << "SQL cursor declare failed: " << e.what() << std::endl;
+                // std::cerr << "SQL cursor declare failed: " << e.what() << std::endl;
             }
             break;
         }
@@ -1036,42 +1031,42 @@ void executeSql(const trx::ast::SqlStatement &sqlStmt, ExecutionContext &context
         case trx::ast::SqlStatementKind::OpenCursor: {
             // Cursor is already opened in declare, but we could re-open if needed
             context.interpreter.setSqlCode(0.0); // Success (no actual operation)
-            std::cout << "SQL OPEN CURSOR: " << sqlStmt.identifier << std::endl;
+            debugPrint("SQL OPEN CURSOR: " + sqlStmt.identifier);
             break;
         }
 
         case trx::ast::SqlStatementKind::FetchCursor: {
             try {
-                std::cout << "FETCH: calling cursorNext for " << sqlStmt.identifier << std::endl;
+                debugPrint("FETCH: calling cursorNext for " + sqlStmt.identifier);
                 if (context.interpreter.db().cursorNext(sqlStmt.identifier)) {
-                    std::cout << "FETCH: cursorNext returned true, calling cursorGetRow" << std::endl;
+                    // std::cout << "FETCH: cursorNext returned true, calling cursorGetRow" << std::endl;
                     auto row = context.interpreter.db().cursorGetRow(sqlStmt.identifier);
-                    std::cout << "FETCH: cursorGetRow returned row with " << row.size() << " columns" << std::endl;
+                    debugPrint("FETCH: cursorGetRow returned row with " + std::to_string(row.size()) + " columns");
                     // Bind results to host variables
                     size_t i = 0;
                     for (const auto& var : sqlStmt.hostVariables) {
                         if (i < row.size()) {
-                            std::cout << "FETCH: binding column " << i << " value " << row[i] << " to variable" << std::endl;
+                            // std::cout << "FETCH: binding column " << i << " value " << row[i] << " to variable" << std::endl;
                             resolveVariableTarget(var, context) = row[i];
-                            std::cout << "FETCH: binding complete for column " << i << std::endl;
+                            // std::cout << "FETCH: binding complete for column " << i << std::endl;
                         }
                         ++i;
                     }
                     context.interpreter.setSqlCode(0.0); // Success - row found
-                    std::cout << "SQL FETCH CURSOR: " << sqlStmt.identifier << " - row found" << std::endl;
+                    debugPrint("SQL FETCH CURSOR: " + sqlStmt.identifier + " - row found");
                 } else {
-                    std::cout << "FETCH: cursorNext returned false, no more rows" << std::endl;
-                    std::cout << "FETCH: cursorNext returned false, no more rows" << std::endl;
+                    debugPrint("FETCH: cursorNext returned false, no more rows");
+                    // std::cout << "FETCH: cursorNext returned false, no more rows" << std::endl;
                     // No more rows - set host variables to null
                     for (const auto& var : sqlStmt.hostVariables) {
                         resolveVariableTarget(var, context) = JsonValue(nullptr);
                     }
                     context.interpreter.setSqlCode(100.0); // No data found
-                    std::cout << "SQL FETCH CURSOR: " << sqlStmt.identifier << " - no more rows" << std::endl;
+                    debugPrint("SQL FETCH CURSOR: " + sqlStmt.identifier + " - no more rows");
                 }
             } catch (const std::runtime_error& e) {
                 context.interpreter.setSqlCode(-1.0); // Error
-                std::cerr << "Cursor operation failed: " << e.what() << std::endl;
+                // std::cerr << "Cursor operation failed: " << e.what() << std::endl;
             }
             break;
         }
@@ -1080,18 +1075,17 @@ void executeSql(const trx::ast::SqlStatement &sqlStmt, ExecutionContext &context
             try {
                 context.interpreter.db().closeCursor(sqlStmt.identifier);
                 context.interpreter.setSqlCode(0.0); // Success
-                std::cout << "SQL CLOSE CURSOR: " << sqlStmt.identifier << std::endl;
+                debugPrint("SQL CLOSE CURSOR: " + sqlStmt.identifier);
             } catch (const std::exception& e) {
                 context.interpreter.setSqlCode(-1.0); // Error
-                std::cerr << "SQL cursor close failed: " << e.what() << std::endl;
+                // std::cerr << "SQL cursor close failed: " << e.what() << std::endl;
             }
             break;
         }
 
         case trx::ast::SqlStatementKind::SelectForUpdate: {
             std::string sql = sqlStmt.sql;
-            std::unordered_map<std::string, JsonValue> hostVars;
-            extractHostVariables(sql, context, hostVars);
+            std::unordered_map<std::string, JsonValue> hostVars = resolveHostVariablesFromAst(sqlStmt.hostVariables, context);
 
             // Execute the SELECT statement (FOR UPDATE is mainly a hint for locking in other databases)
             auto params = convertHostVarsToParams(hostVars);
@@ -1108,18 +1102,18 @@ void executeSql(const trx::ast::SqlStatement &sqlStmt, ExecutionContext &context
                         ++i;
                     }
                     context.interpreter.setSqlCode(0.0); // Success
-                    std::cout << "SQL SELECT FOR UPDATE: " << sqlStmt.sql << " - row locked and fetched" << std::endl;
+                    // std::cout << "SQL SELECT FOR UPDATE: " << sqlStmt.sql << " - row locked and fetched" << std::endl;
                 } else {
                     // No rows found - set host variables to null
                     for (const auto& var : sqlStmt.hostVariables) {
                         resolveVariableTarget(var, context) = JsonValue(nullptr);
                     }
                     context.interpreter.setSqlCode(100.0); // No data found
-                    std::cout << "SQL SELECT FOR UPDATE: " << sqlStmt.sql << " - no rows found" << std::endl;
+                    // std::cout << "SQL SELECT FOR UPDATE: " << sqlStmt.sql << " - no rows found" << std::endl;
                 }
             } catch (const std::exception& e) {
                 context.interpreter.setSqlCode(-1.0); // Error
-                std::cerr << "SQL select for update failed: " << e.what() << std::endl;
+                // std::cerr << "SQL select for update failed: " << e.what() << std::endl;
             }
             break;
         }
@@ -1278,6 +1272,10 @@ std::optional<JsonValue> Interpreter::execute(const std::string &procedureName, 
 }
 
 std::optional<JsonValue> Interpreter::execute(const std::string &procedureName, const JsonValue &input, const std::map<std::string, std::string> &pathParams) {
+    // std::cout << "DEBUG execute: Executing procedure '" << procedureName << "' with " << pathParams.size() << " path parameters" << std::endl;
+    // for (const auto& [key, value] : pathParams) {
+    //     std::cout << "DEBUG execute: Path param '" << key << "' = '" << value << "'" << std::endl;
+    // }
     auto it = procedures_.find(procedureName);
     if (it == procedures_.end()) {
         throw TrxException("Procedure not found: " + procedureName);
@@ -1306,34 +1304,45 @@ std::optional<JsonValue> Interpreter::execute(const std::string &procedureName, 
         const auto &paramDecl = procedure->name.pathParameters[i];
         std::string paramName = paramDecl.name.name;
         std::string paramType = paramDecl.type.name;
+        // std::cout << "DEBUG execute: Processing path parameter '" << paramName << "' of type '" << paramType << "'" << std::endl;
         
         // Find the corresponding path parameter value
         auto pathParamIt = pathParams.find(paramName);
         if (pathParamIt != pathParams.end()) {
             std::string valueStr = pathParamIt->second;
+            // std::cout << "DEBUG execute: Found path param value '" << valueStr << "' for '" << paramName << "'" << std::endl;
             JsonValue paramValue;
             
             // Convert string value to appropriate type based on parameter type
             if (paramType == "INTEGER") {
                 try {
                     paramValue = JsonValue(std::stoi(valueStr));
+                    std::cout << "DEBUG execute: Converted to integer: " << std::get<double>(paramValue.data) << std::endl;
                 } catch (...) {
                     paramValue = JsonValue(0); // Default to 0 on conversion error
+                    std::cout << "DEBUG execute: Conversion to integer failed, using default 0" << std::endl;
                 }
             } else if (paramType == "DECIMAL" || paramType == "DOUBLE") {
                 try {
                     paramValue = JsonValue(std::stod(valueStr));
+                    // std::cout << "DEBUG execute: Converted to double: " << std::get<double>(paramValue.data) << std::endl;
                 } catch (...) {
                     paramValue = JsonValue(0.0); // Default to 0.0 on conversion error
+                    //std::cout << "DEBUG execute: Conversion to double failed, using default 0.0" << std::endl;
                 }
             } else if (paramType == "BOOLEAN") {
                 paramValue = JsonValue(valueStr == "true" || valueStr == "TRUE" || valueStr == "1");
+                // std::cout << "DEBUG execute: Converted to boolean: " << std::get<bool>(paramValue.data) << std::endl;
             } else {
                 // Default to string for unknown types
                 paramValue = JsonValue(valueStr);
+                // std::cout << "DEBUG execute: Using as string: '" << std::get<std::string>(paramValue.data) << "'" << std::endl;
             }
             
             context.variables[paramName] = paramValue;
+            std::cout << "DEBUG execute: Assigned path parameter '" << paramName << "' to context variables" << std::endl;
+        } else {
+            // std::cout << "DEBUG execute: Path parameter '" << paramName << "' not found in pathParams" << std::endl;
         }
     }
     

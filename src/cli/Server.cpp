@@ -5,6 +5,7 @@
 #include "trx/parsing/ParserDriver.h"
 #include "trx/runtime/Interpreter.h"
 #include "trx/runtime/ThreadPool.h"
+#include "trx/runtime/TrxException.h"
 #include "trx/diagnostics/DiagnosticEngine.h"
 
 #include <algorithm>
@@ -917,6 +918,19 @@ HttpResponse makeErrorResponse(int status, std::string_view message) {
     return response;
 }
 
+// Helper function to get appropriate HTTP status code for successful responses
+int getSuccessStatusCode(const std::string& method) {
+    if (method == "POST") {
+        return 201; // Created
+    } else if (method == "PUT" || method == "PATCH") {
+        return 200; // OK
+    } else if (method == "DELETE") {
+        return 204; // No Content
+    } else {
+        return 200; // OK (for GET, HEAD, etc.)
+    }
+}
+
 HttpResponse handleExecuteProcedure(const HttpRequest &request,
                                    const trx::ast::ProcedureDecl *procedure,
                                    trx::runtime::Interpreter &interpreter,
@@ -963,7 +977,7 @@ HttpResponse handleExecuteProcedure(const HttpRequest &request,
             const trx::runtime::JsonValue output = *outputOpt;
 
             HttpResponse response;
-            response.status = 200;
+            response.status = getSuccessStatusCode(expectedMethod);
             response.contentType = "application/json";
             response.body = serializeJsonValue(output);
             response.extraHeaders.emplace_back("Access-Control-Allow-Origin", "*");
@@ -973,7 +987,7 @@ HttpResponse handleExecuteProcedure(const HttpRequest &request,
         } else {
             // Procedure does not return output
             HttpResponse response;
-            response.status = 200;
+            response.status = getSuccessStatusCode(expectedMethod);
             response.contentType = "application/json";
             response.body = "{}";
             response.extraHeaders.emplace_back("Access-Control-Allow-Origin", "*");
@@ -982,6 +996,8 @@ HttpResponse handleExecuteProcedure(const HttpRequest &request,
             return response;
         }
     } catch (const JsonParseError &error) {
+        return makeErrorResponse(400, error.what());
+    } catch (const trx::runtime::TrxException &error) {
         return makeErrorResponse(400, error.what());
     } catch (const std::exception &error) {
         return makeErrorResponse(500, error.what());

@@ -316,15 +316,17 @@ void SQLiteDriver::bindParameters(sqlite3_stmt* stmt, const std::vector<SqlParam
     for (size_t i = 0; i < params.size(); ++i) {
         const auto& param = params[i];
         int paramIndex = i + 1; // SQLite uses 1-based indexing for positional parameters
-        
+
         if (param.value.isNull()) {
             sqlite3_bind_null(stmt, paramIndex);
         } else if (param.value.isBool()) {
-            sqlite3_bind_int(stmt, paramIndex, param.value.asBool() ? 1 : 0);
+            int boolVal = param.value.asBool() ? 1 : 0;
+            sqlite3_bind_int(stmt, paramIndex, boolVal);
         } else if (param.value.isNumber()) {
             double num = param.value.asNumber();
             if (num == std::floor(num) && num >= INT_MIN && num <= INT_MAX) {
-                sqlite3_bind_int64(stmt, paramIndex, static_cast<long long>(num));
+                long long intVal = static_cast<long long>(num);
+                sqlite3_bind_int64(stmt, paramIndex, intVal);
             } else {
                 sqlite3_bind_double(stmt, paramIndex, num);
             }

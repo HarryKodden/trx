@@ -21,9 +21,23 @@ EXPORT PROCEDURE init_person_table() {
         (3, 'Charlie Brown', 35, FALSE, 60000.00);
 }
 
-// ============================================================================
-// PERSON CRUD OPERATIONS - REST API ENDPOINTS
-// ============================================================================
+// GET /debug_persons - Debug: show all persons with IDs
+EXPORT METHOD GET FUNCTION debug_persons() : JSON {
+    VAR result JSON := { "persons": [] };
+
+    EXEC SQL DECLARE debug_cursor CURSOR FOR SELECT id, name, age, active, salary FROM person;
+    EXEC SQL OPEN debug_cursor;
+    WHILE sqlcode = 0 {
+        VAR person JSON := {};
+        EXEC SQL FETCH debug_cursor INTO :person.id, :person.name, :person.age, :person.active, :person.salary;
+        if sqlcode = 0 {
+            append(result.persons, person);
+        }
+    }
+    EXEC SQL CLOSE debug_cursor;
+    
+    RETURN result;
+}
 
 // GET /persons - Retrieve all persons
 EXPORT METHOD GET FUNCTION persons() : JSON {
@@ -47,19 +61,16 @@ EXPORT METHOD GET FUNCTION persons() : JSON {
 // GET /person/{id} - Retrieve a specific person by ID
 EXPORT METHOD GET FUNCTION person/{id: INTEGER}() : JSON {
     VAR person FROM TABLE person;
-    VAR person_id INTEGER := id;  // Assign to local variable
-
-    EXEC SQL DECLARE person_cursor CURSOR FOR SELECT id, name, age, active, salary FROM person WHERE id = :person_id;
+    
+    EXEC SQL DECLARE person_cursor CURSOR FOR SELECT id, name, age, active, salary FROM person WHERE id = :id;
     EXEC SQL OPEN person_cursor;
     EXEC SQL FETCH person_cursor INTO :person.id, :person.name, :person.age, :person.active, :person.salary;
-
+    
     IF sqlcode = 100 {
-        // Person not found
         EXEC SQL CLOSE person_cursor;
-
         THROW "person not found";
     }
-
+    
     EXEC SQL CLOSE person_cursor;
     RETURN person;
 }

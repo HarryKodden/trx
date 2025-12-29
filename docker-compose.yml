@@ -29,6 +29,7 @@ services:
       DATABASE_CONNECTION_STRING: host=postgres port=5432 dbname=trx user=trx password=password
       # DATABASE_TYPE: ODBC
       # DATABASE_CONNECTION_STRING: DRIVER={PostgreSQL Unicode};SERVER=postgres;PORT=5432;DATABASE=trx;UID=trx;PWD=password;
+      DEBUG: "true"
     volumes:
       - ./examples:/workspace/
     command: ["serve"]
