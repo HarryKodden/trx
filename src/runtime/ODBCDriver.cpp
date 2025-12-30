@@ -35,6 +35,7 @@ ODBCDriver::~ODBCDriver() {
         }
     }
     statements_.clear();
+    cursorSql_.clear();
 
     if (connection_) {
         SQLDisconnect(connection_);
@@ -233,6 +234,7 @@ void ODBCDriver::openCursor(const std::string& name, const std::string& sql, con
         checkODBC(ret, stmt, SQL_HANDLE_STMT, "SQLExecute");
 
         statements_[name] = stmt;
+        cursorSql_[name] = sql; // Store SQL for reopening
 
     } catch (...) {
         SQLFreeHandle(SQL_HANDLE_STMT, stmt);
@@ -242,6 +244,57 @@ void ODBCDriver::openCursor(const std::string& name, const std::string& sql, con
 
 void ODBCDriver::openDeclaredCursor(const std::string& /*name*/) {
     // ODBC doesn't need separate OPEN - cursor is opened when executed
+}
+
+void ODBCDriver::openDeclaredCursorWithParams(const std::string& name, const std::vector<SqlParameter>& params) {
+    auto sqlIt = cursorSql_.find(name);
+    if (sqlIt == cursorSql_.end()) {
+        throw std::runtime_error("Cursor not declared with USING support: " + name);
+    }
+    
+    closeCursor(name);
+    
+    SQLHSTMT stmt;
+    SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, connection_, &stmt);
+    checkODBC(ret, connection_, SQL_HANDLE_DBC, "SQLAllocHandle(STMT)");
+
+    try {
+        // Prepare statement
+        ret = SQLPrepare(stmt, reinterpret_cast<SQLCHAR*>(const_cast<char*>(sqlIt->second.c_str())), SQL_NTS);
+        checkODBC(ret, stmt, SQL_HANDLE_STMT, "SQLPrepare");
+
+        // Bind parameters
+        for (size_t i = 0; i < params.size(); ++i) {
+            const auto& param = params[i];
+            SQLLEN indicator = SQL_NTS;
+
+            if (std::holds_alternative<double>(param.value.data)) {
+                double val = std::get<double>(param.value.data);
+                ret = SQLBindParameter(stmt, i + 1, SQL_PARAM_INPUT, SQL_C_DOUBLE, SQL_DOUBLE, 0, 0, &val, 0, &indicator);
+            } else if (std::holds_alternative<std::string>(param.value.data)) {
+                const std::string& val = std::get<std::string>(param.value.data);
+                ret = SQLBindParameter(stmt, i + 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, val.size(), 0, 
+                                     const_cast<char*>(val.c_str()), val.size(), &indicator);
+            } else if (std::holds_alternative<bool>(param.value.data)) {
+                bool val = std::get<bool>(param.value.data);
+                ret = SQLBindParameter(stmt, i + 1, SQL_PARAM_INPUT, SQL_C_BIT, SQL_BIT, 0, 0, &val, 0, &indicator);
+            } else {
+                indicator = SQL_NULL_DATA;
+                ret = SQLBindParameter(stmt, i + 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 0, 0, nullptr, 0, &indicator);
+            }
+            checkODBC(ret, stmt, SQL_HANDLE_STMT, "SQLBindParameter");
+        }
+
+        // Execute
+        ret = SQLExecute(stmt);
+        checkODBC(ret, stmt, SQL_HANDLE_STMT, "SQLExecute");
+
+        statements_[name] = stmt;
+
+    } catch (...) {
+        SQLFreeHandle(SQL_HANDLE_STMT, stmt);
+        throw;
+    }
 }
 
 bool ODBCDriver::cursorNext(const std::string& name) {

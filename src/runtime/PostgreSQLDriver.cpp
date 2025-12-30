@@ -36,6 +36,7 @@ PostgreSQLDriver::~PostgreSQLDriver() {
         }
     }
     cursors_.clear();
+    cursorSql_.clear();
     currentRows_.clear();
 
     if (conn_) {
@@ -185,6 +186,9 @@ void PostgreSQLDriver::openCursor(const std::string& name, const std::string& sq
     std::string declareSql = "DECLARE " + name + " CURSOR FOR " + sql;
     executeSql(declareSql, params);
     
+    // Store the original SQL for potential reopening
+    cursorSql_[name] = sql;
+    
     // In PostgreSQL, DECLARE ... CURSOR FOR ... automatically opens the cursor
     // No separate OPEN statement needed
     cursors_[name] = true;
@@ -198,6 +202,22 @@ void PostgreSQLDriver::openDeclaredCursor(const std::string& name) {
     
     // In PostgreSQL, DECLARE ... CURSOR FOR ... automatically opens the cursor
     // No separate OPEN statement needed
+}
+
+void PostgreSQLDriver::openDeclaredCursorWithParams(const std::string& name, const std::vector<SqlParameter>& params) {
+    auto sqlIt = cursorSql_.find(name);
+    if (sqlIt == cursorSql_.end()) {
+        throw std::runtime_error("Cursor not declared with USING support: " + name);
+    }
+    
+    // Close existing cursor if open
+    closeCursor(name);
+    
+    // Re-declare the cursor with new parameters
+    std::string declareSql = "DECLARE " + name + " CURSOR FOR " + sqlIt->second;
+    executeSql(declareSql, params);
+    
+    cursors_[name] = true;
 }
 
 bool PostgreSQLDriver::cursorNext(const std::string& name) {
@@ -254,9 +274,14 @@ void PostgreSQLDriver::closeCursor(const std::string& name) {
     auto it = cursors_.find(name);
     if (it != cursors_.end()) {
         std::string closeSql = "CLOSE " + name;
-        executeSql(closeSql, {});
+        try {
+            executeSql(closeSql, {});
+        } catch (const std::exception&) {
+            // Ignore errors when closing cursors
+        }
         cursors_.erase(it);
         currentRows_.erase(name);
+        // Keep cursorSql_ for potential reopening
     }
 }
 

@@ -18,6 +18,7 @@ SQLiteDriver::~SQLiteDriver() {
         }
     }
     cursors_.clear();
+    cursorSql_.clear();
 
     if (db_) {
         sqlite3_close(db_);
@@ -113,10 +114,28 @@ void SQLiteDriver::openCursor(const std::string& name, const std::string& sql, c
 
         bindParameters(stmt, params);
         cursors_[name] = stmt;
+        cursorSql_[name] = sql; // Store SQL for reopening
     }
 
 void SQLiteDriver::openDeclaredCursor(const std::string& /*name*/) {
         // SQLite doesn't need separate OPEN - cursor is opened when prepared
+    }
+
+void SQLiteDriver::openDeclaredCursorWithParams(const std::string& name, const std::vector<SqlParameter>& params) {
+        auto sqlIt = cursorSql_.find(name);
+        if (sqlIt == cursorSql_.end()) {
+            throw std::runtime_error("Cursor not declared with USING support: " + name);
+        }
+        
+        closeCursor(name);
+        
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db_, sqlIt->second.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            throw std::runtime_error("Failed to prepare cursor SQL: " + std::string(sqlite3_errmsg(db_)));
+        }
+
+        bindParameters(stmt, params);
+        cursors_[name] = stmt;
     }
 
 bool SQLiteDriver::cursorNext(const std::string& name) {
@@ -327,13 +346,7 @@ void SQLiteDriver::bindParameters(sqlite3_stmt* stmt, const std::vector<SqlParam
             int boolVal = param.value.asBool() ? 1 : 0;
             sqlite3_bind_int(stmt, paramIndex, boolVal);
         } else if (param.value.isNumber()) {
-            double num = param.value.asNumber();
-            if (num == std::floor(num) && num >= INT_MIN && num <= INT_MAX) {
-                long long intVal = static_cast<long long>(num);
-                sqlite3_bind_int64(stmt, paramIndex, intVal);
-            } else {
-                sqlite3_bind_double(stmt, paramIndex, num);
-            }
+            sqlite3_bind_double(stmt, paramIndex, param.value.asNumber());
         } else if (param.value.isString()) {
             const std::string& str = param.value.asString();
             sqlite3_bind_text(stmt, paramIndex, str.c_str(), str.size(), SQLITE_TRANSIENT);

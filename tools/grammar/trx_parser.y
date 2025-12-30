@@ -320,6 +320,7 @@ inline void classifySqlStatement(trx::ast::SqlStatement &statement) {
         pos = skipSqlWhitespace(upper, nameEnd);
         if (pos + 6 <= upper.size() && upper.compare(pos, 6, "CURSOR") == 0 && (pos + 6 == upper.size() || std::isspace(static_cast<unsigned char>(upper[pos + 6])))) {
             statement.kind = trx::ast::SqlStatementKind::DeclareCursor;
+            statement.sql = upper;
         }
         return;
     }
@@ -331,7 +332,19 @@ inline void classifySqlStatement(trx::ast::SqlStatement &statement) {
             return;
         }
         annotateIdentifier(nameStart, nameEnd);
+        pos = skipSqlWhitespace(upper, nameEnd);
+        
+        // Check for USING clause
         statement.kind = trx::ast::SqlStatementKind::OpenCursor;
+        if (pos + 5 <= upper.size() && upper.compare(pos, 5, "USING") == 0) {
+            // Truncate the SQL at USING
+            statement.sql = upper.substr(0, pos);
+            // Move hostVariables to openParameters
+            statement.openParameters = std::move(statement.hostVariables);
+            statement.hostVariables.clear();
+        } else {
+            statement.sql = upper;
+        }
         return;
     }
 
@@ -343,6 +356,7 @@ inline void classifySqlStatement(trx::ast::SqlStatement &statement) {
         }
         annotateIdentifier(nameStart, nameEnd);
         statement.kind = trx::ast::SqlStatementKind::CloseCursor;
+        statement.sql = upper;
         return;
     }
 
@@ -363,6 +377,7 @@ inline void classifySqlStatement(trx::ast::SqlStatement &statement) {
 
         annotateIdentifier(tokenStart, tokenEnd);
         statement.kind = trx::ast::SqlStatementKind::FetchCursor;
+        statement.sql = upper;
         return;
     }
 
@@ -372,7 +387,18 @@ inline void classifySqlStatement(trx::ast::SqlStatement &statement) {
         std::string::size_type forUpdatePos = upper.find(" FOR UPDATE OF ");
         if (forUpdatePos != std::string::npos) {
             statement.kind = trx::ast::SqlStatementKind::SelectForUpdate;
+            statement.sql = upper;
+            return;
         }
+        
+        // Look for "INTO" pattern in the SQL
+        std::string::size_type intoPos = upper.find(" INTO ");
+        if (intoPos != std::string::npos) {
+            statement.kind = trx::ast::SqlStatementKind::SelectInto;
+            statement.sql = upper;
+            return;
+        }
+        
         return;
     }
 }

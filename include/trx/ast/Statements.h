@@ -66,7 +66,8 @@ enum class SqlStatementKind {
     OpenCursor,
     FetchCursor,
     CloseCursor,
-    SelectForUpdate
+    SelectForUpdate,
+    SelectInto
 };
 
 struct SqlStatement {
@@ -74,6 +75,7 @@ struct SqlStatement {
     std::string identifier;      // cursor name when applicable
     std::string sql;             // textual SQL (for exec and declare)
     std::vector<VariableExpression> hostVariables; // fetch target list
+    std::vector<VariableExpression> openParameters; // parameters for OPEN cursor USING
 };
 
 struct TryCatchStatement;

@@ -229,3 +229,18 @@ add_test(
   NAME ComprehensiveDatabaseTest
   COMMAND trx_comprehensive_database_test
 )
+
+add_executable(trx_sql_patterns_test
+  runtime/TestUtils.h
+  runtime/SqlPatternsTest.cpp
+)
+
+target_link_libraries(trx_sql_patterns_test
+  PRIVATE
+    trx_core
+)
+
+add_test(
+  NAME SqlPatternsTest
+  COMMAND trx_sql_patterns_test
+)

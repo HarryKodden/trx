@@ -25,6 +25,7 @@ public:
     std::vector<std::vector<SqlValue>> querySql(const std::string& sql, const std::vector<SqlParameter>& params = {}) override;
     void openCursor(const std::string& name, const std::string& sql, const std::vector<SqlParameter>& params = {}) override;
     void openDeclaredCursor(const std::string& name) override;
+    void openDeclaredCursorWithParams(const std::string& name, const std::vector<SqlParameter>& params = {}) override;
     bool cursorNext(const std::string& name) override;
     std::vector<SqlValue> cursorGetRow(const std::string& name) override;
     void closeCursor(const std::string& name) override;
@@ -40,6 +41,7 @@ private:
     SQLHENV env_; // ODBC environment handle
     SQLHDBC connection_; // ODBC connection handle
     std::unordered_map<std::string, SQLHSTMT> statements_; // ODBC statement handles for cursors
+    std::unordered_map<std::string, std::string> cursorSql_; // Store original cursor SQL
 };
 
 } // namespace trx::runtime

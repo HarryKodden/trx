@@ -70,6 +70,13 @@ public:
     virtual void openDeclaredCursor(const std::string& name) = 0;
 
     /**
+     * Open a previously declared cursor with parameters.
+     * @param name Cursor name
+     * @param params Parameters to bind to the cursor
+     */
+    virtual void openDeclaredCursorWithParams(const std::string& name, const std::vector<SqlParameter>& params = {}) = 0;
+
+    /**
      * Advance cursor to next row.
      * @param name Cursor name
      * @return true if there is a next row, false if no more rows

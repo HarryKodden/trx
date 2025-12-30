@@ -61,24 +61,24 @@ JsonValue &resolveVariableTarget(const trx::ast::VariableExpression &variable, E
 
 void executeStatements(const trx::ast::StatementList &statements, ExecutionContext &context);
 
-std::unordered_map<std::string, JsonValue> resolveHostVariablesFromAst(const std::vector<trx::ast::VariableExpression>& hostVariables, ExecutionContext &context);
+std::vector<JsonValue> resolveHostVariablesFromAst(const std::vector<trx::ast::VariableExpression>& hostVariables, ExecutionContext &context);
 
-std::vector<SqlParameter> convertHostVarsToParams(const std::unordered_map<std::string, JsonValue>& hostVars) {
+std::vector<SqlParameter> convertHostVarsToParams(const std::vector<JsonValue>& hostVars) {
     std::vector<SqlParameter> params;
-    for (const auto& [name, value] : hostVars) {
-        params.push_back({name, value});
+    int index = 1;
+    for (const auto& value : hostVars) {
+        params.push_back({std::to_string(index), value});
+        ++index;
     }
     return params;
 }
 
-std::unordered_map<std::string, JsonValue> resolveHostVariablesFromAst(const std::vector<trx::ast::VariableExpression>& hostVariables, ExecutionContext &context) {
-    std::unordered_map<std::string, JsonValue> hostVars;
-    int paramIndex = 1;
+std::vector<JsonValue> resolveHostVariablesFromAst(const std::vector<trx::ast::VariableExpression>& hostVariables, ExecutionContext &context) {
+    std::vector<JsonValue> hostVars;
     for (const auto& varExpr : hostVariables) {
         try {
             JsonValue value = resolveVariableValue(varExpr, context);
-            hostVars[std::to_string(paramIndex)] = value;
-            ++paramIndex;
+            hostVars.push_back(value);
         } catch (const std::exception& e) {
             std::cerr << "Failed to resolve host variable: " << e.what() << std::endl;
             // Continue with other variables
@@ -998,7 +998,7 @@ void executeSql(const trx::ast::SqlStatement &sqlStmt, ExecutionContext &context
         case trx::ast::SqlStatementKind::ExecImmediate: {
             std::string sql = sqlStmt.sql;
             // Extract host variables from AST
-            std::unordered_map<std::string, JsonValue> hostVars = resolveHostVariablesFromAst(sqlStmt.hostVariables, context);
+            std::vector<JsonValue> hostVars = resolveHostVariablesFromAst(sqlStmt.hostVariables, context);
 
             // Execute using database driver
             auto params = convertHostVarsToParams(hostVars);
@@ -1015,7 +1015,7 @@ void executeSql(const trx::ast::SqlStatement &sqlStmt, ExecutionContext &context
         
         case trx::ast::SqlStatementKind::DeclareCursor: {
             std::string selectSql = extractSelectFromDeclare(sqlStmt.sql);
-            std::unordered_map<std::string, JsonValue> hostVars = resolveHostVariablesFromAst(sqlStmt.hostVariables, context);
+            std::vector<JsonValue> hostVars = resolveHostVariablesFromAst(sqlStmt.hostVariables, context);
 
             try {
                 context.interpreter.db().openCursor(sqlStmt.identifier, selectSql, convertHostVarsToParams(hostVars));
@@ -1029,9 +1029,22 @@ void executeSql(const trx::ast::SqlStatement &sqlStmt, ExecutionContext &context
         }
 
         case trx::ast::SqlStatementKind::OpenCursor: {
-            // Cursor is already opened in declare, but we could re-open if needed
-            context.interpreter.setSqlCode(0.0); // Success (no actual operation)
-            debugPrint("SQL OPEN CURSOR: " + sqlStmt.identifier);
+            if (!sqlStmt.openParameters.empty()) {
+                // This is OPEN cursor USING parameters
+                std::vector<JsonValue> openParams = resolveHostVariablesFromAst(sqlStmt.openParameters, context);
+                try {
+                    context.interpreter.db().openDeclaredCursorWithParams(sqlStmt.identifier, convertHostVarsToParams(openParams));
+                    context.interpreter.setSqlCode(0.0); // Success
+                    debugPrint("SQL OPEN CURSOR WITH PARAMS: " + sqlStmt.identifier);
+                } catch (const std::exception& e) {
+                    context.interpreter.setSqlCode(-1.0); // Error
+                    debugPrint("SQL OPEN CURSOR WITH PARAMS failed: " + std::string(e.what()));
+                }
+            } else {
+                // Regular OPEN cursor (already opened in declare)
+                context.interpreter.setSqlCode(0.0); // Success (no actual operation)
+                debugPrint("SQL OPEN CURSOR: " + sqlStmt.identifier);
+            }
             break;
         }
 
@@ -1085,7 +1098,7 @@ void executeSql(const trx::ast::SqlStatement &sqlStmt, ExecutionContext &context
 
         case trx::ast::SqlStatementKind::SelectForUpdate: {
             std::string sql = sqlStmt.sql;
-            std::unordered_map<std::string, JsonValue> hostVars = resolveHostVariablesFromAst(sqlStmt.hostVariables, context);
+            std::vector<JsonValue> hostVars = resolveHostVariablesFromAst(sqlStmt.hostVariables, context);
 
             // Execute the SELECT statement (FOR UPDATE is mainly a hint for locking in other databases)
             auto params = convertHostVarsToParams(hostVars);
@@ -1114,6 +1127,41 @@ void executeSql(const trx::ast::SqlStatement &sqlStmt, ExecutionContext &context
             } catch (const std::exception& e) {
                 context.interpreter.setSqlCode(-1.0); // Error
                 // std::cerr << "SQL select for update failed: " << e.what() << std::endl;
+            }
+            break;
+        }
+
+        case trx::ast::SqlStatementKind::SelectInto: {
+            std::string sql = sqlStmt.sql;
+            std::vector<JsonValue> hostVars = resolveHostVariablesFromAst(sqlStmt.hostVariables, context);
+
+            // Execute the SELECT statement and fetch single row into host variables
+            auto params = convertHostVarsToParams(hostVars);
+            try {
+                auto results = context.interpreter.db().querySql(sql, params);
+                if (!results.empty()) {
+                    // Bind first row results to host variables
+                    const auto& row = results[0];
+                    size_t i = 0;
+                    for (const auto& var : sqlStmt.hostVariables) {
+                        if (i < row.size()) {
+                            resolveVariableTarget(var, context) = row[i];
+                        }
+                        ++i;
+                    }
+                    context.interpreter.setSqlCode(0.0); // Success
+                    debugPrint("SQL SELECT INTO: " + sqlStmt.sql);
+                } else {
+                    // No rows found - set host variables to null
+                    for (const auto& var : sqlStmt.hostVariables) {
+                        resolveVariableTarget(var, context) = JsonValue(nullptr);
+                    }
+                    context.interpreter.setSqlCode(100.0); // No data found
+                    debugPrint("SQL SELECT INTO: " + sqlStmt.sql + " - no rows found");
+                }
+            } catch (const std::exception& e) {
+                context.interpreter.setSqlCode(-1.0); // Error
+                // std::cerr << "SQL select into failed: " << e.what() << std::endl;
             }
             break;
         }
@@ -1276,6 +1324,27 @@ std::optional<JsonValue> Interpreter::execute(const std::string &procedureName, 
     // for (const auto& [key, value] : pathParams) {
     //     std::cout << "DEBUG execute: Path param '" << key << "' = '" << value << "'" << std::endl;
     // }
+    if (procedureName.empty()) {
+        // Execute module statements
+        ExecutionContext ctx{*this, {}, false, {}, false, true, "JSON"};
+        try {
+            for (const auto &stmt : module_.statements) {
+                executeStatement(stmt, ctx);
+                if (ctx.returned) break;
+            }
+        } catch (const ReturnException &e) {
+            if (ctx.isFunction) {
+                ctx.returnValue = e.value;
+                ctx.returned = true;
+            } else {
+                throw TrxException("Procedures cannot return values. Use RETURN without a value.");
+            }
+        }
+        if (ctx.returned) {
+            return ctx.returnValue;
+        }
+        return {};
+    }
     auto it = procedures_.find(procedureName);
     if (it == procedures_.end()) {
         throw TrxException("Procedure not found: " + procedureName);

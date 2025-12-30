@@ -72,7 +72,7 @@ bool validateCursorProcedure(const trx::ast::ProcedureDecl &procedure) {
     }
     if (!expect(declareStmt->kind == trx::ast::SqlStatementKind::DeclareCursor, "DECLARE statement kind mismatch") ||
         !expect(declareStmt->identifier == "mycursor", "DECLARE cursor name mismatch") ||
-        !expect(declareStmt->sql == "DECLARE mycursor CURSOR FOR SELECT NAME, VALUE FROM CUSTOMERS WHERE ID = ?", "DECLARE SQL text mismatch") ||
+        !expect(declareStmt->sql == "DECLARE MYCURSOR CURSOR FOR SELECT NAME, VALUE FROM CUSTOMERS WHERE ID = ?", "DECLARE SQL text mismatch") ||
         !expect(declareStmt->hostVariables.size() == 1, "DECLARE host variable count mismatch") ||
         !expectVariablePath(declareStmt->hostVariables.front(), {"sample", "VALUE"})) {
         return false;
@@ -84,7 +84,7 @@ bool validateCursorProcedure(const trx::ast::ProcedureDecl &procedure) {
     }
     if (!expect(openStmt->kind == trx::ast::SqlStatementKind::OpenCursor, "OPEN statement kind mismatch") ||
         !expect(openStmt->identifier == "mycursor", "OPEN cursor name mismatch") ||
-        !expect(openStmt->sql == "OPEN mycursor", "OPEN SQL text mismatch") ||
+        !expect(openStmt->sql == "OPEN MYCURSOR", "OPEN SQL text mismatch") ||
         !expect(openStmt->hostVariables.empty(), "OPEN should not have host variables")) {
         return false;
     }
@@ -95,7 +95,7 @@ bool validateCursorProcedure(const trx::ast::ProcedureDecl &procedure) {
     }
     if (!expect(fetchStmt->kind == trx::ast::SqlStatementKind::FetchCursor, "FETCH statement kind mismatch") ||
         !expect(fetchStmt->identifier == "mycursor", "FETCH cursor name mismatch") ||
-        !expect(fetchStmt->sql == "FETCH mycursor INTO ?, ?", "FETCH SQL text mismatch") ||
+        !expect(fetchStmt->sql == "FETCH MYCURSOR INTO ?, ?", "FETCH SQL text mismatch") ||
         !expect(fetchStmt->hostVariables.size() == 2, "FETCH host variable count mismatch") ||
         !expectVariablePath(fetchStmt->hostVariables[0], {"output", "NAME"}) ||
         !expectVariablePath(fetchStmt->hostVariables[1], {"output", "RESULT"})) {
@@ -108,7 +108,7 @@ bool validateCursorProcedure(const trx::ast::ProcedureDecl &procedure) {
     }
     if (!expect(closeStmt->kind == trx::ast::SqlStatementKind::CloseCursor, "CLOSE statement kind mismatch") ||
         !expect(closeStmt->identifier == "mycursor", "CLOSE cursor name mismatch") ||
-        !expect(closeStmt->sql == "CLOSE mycursor", "CLOSE SQL text mismatch") ||
+        !expect(closeStmt->sql == "CLOSE MYCURSOR", "CLOSE SQL text mismatch") ||
         !expect(closeStmt->hostVariables.empty(), "CLOSE should not have host variables")) {
         return false;
     }
