@@ -558,8 +558,7 @@ private:
                 throw JsonParseError("Object keys must be strings");
             }
             std::string key = parseString();
-            // Convert key to uppercase for case-insensitive matching
-            std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+            // Keys are case-sensitive in JSON
             skipWhitespace();
             expect(':');
             skipWhitespace();

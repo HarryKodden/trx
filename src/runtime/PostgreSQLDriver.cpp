@@ -80,32 +80,33 @@ void PostgreSQLDriver::executeSql(const std::string& sql, const std::vector<SqlP
 
     std::cout << "SQL EXEC: " << convertedSql << std::endl;
 
+    std::vector<std::string> paramStrings;
     std::vector<const char*> paramValues;
     std::vector<int> paramLengths;
     std::vector<int> paramFormats;
     for (const auto& param : params) {
         if (std::holds_alternative<std::string>(param.value.data)) {
-            paramValues.push_back(std::get<std::string>(param.value.data).c_str());
-            paramLengths.push_back(std::get<std::string>(param.value.data).size());
+            paramStrings.push_back(std::get<std::string>(param.value.data));
+            paramValues.push_back(paramStrings.back().c_str());
+            paramLengths.push_back(paramStrings.back().size());
             paramFormats.push_back(0); // text
         } else if (std::holds_alternative<double>(param.value.data)) {
             double num = std::get<double>(param.value.data);
             // Check if it's a whole number (integer)
             if (num == static_cast<long long>(num)) {
                 // Format as integer
-                std::string val = std::to_string(static_cast<long long>(num));
-                paramValues.push_back(val.c_str());
-                paramLengths.push_back(val.size());
+                paramStrings.push_back(std::to_string(static_cast<long long>(num)));
             } else {
                 // Format as decimal
-                std::string val = std::to_string(num);
-                paramValues.push_back(val.c_str());
-                paramLengths.push_back(val.size());
+                paramStrings.push_back(std::to_string(num));
             }
+            paramValues.push_back(paramStrings.back().c_str());
+            paramLengths.push_back(paramStrings.back().size());
             paramFormats.push_back(0);
         } else if (std::holds_alternative<bool>(param.value.data)) {
-            paramValues.push_back(std::get<bool>(param.value.data) ? "true" : "false");
-            paramLengths.push_back(0);
+            paramStrings.push_back(std::get<bool>(param.value.data) ? "true" : "false");
+            paramValues.push_back(paramStrings.back().c_str());
+            paramLengths.push_back(paramStrings.back().size());
             paramFormats.push_back(0);
         } else {
             paramValues.push_back(nullptr);
@@ -122,22 +123,45 @@ void PostgreSQLDriver::executeSql(const std::string& sql, const std::vector<SqlP
 }
 
 std::vector<std::vector<SqlValue>> PostgreSQLDriver::querySql(const std::string& sql, const std::vector<SqlParameter>& params) {
+    // Convert ? placeholders to $1, $2, etc. for PostgreSQL
+    std::string convertedSql = sql;
+    size_t pos = 0;
+    int paramIndex = 1;
+    while ((pos = convertedSql.find('?', pos)) != std::string::npos) {
+        std::string replacement = "$" + std::to_string(paramIndex++);
+        convertedSql.replace(pos, 1, replacement);
+        pos += replacement.length();
+    }
+
+    std::cout << "SQL QUERY: " << convertedSql << std::endl;
+
+    std::vector<std::string> paramStrings;
     std::vector<const char*> paramValues;
     std::vector<int> paramLengths;
     std::vector<int> paramFormats;
     for (const auto& param : params) {
         if (std::holds_alternative<std::string>(param.value.data)) {
-            paramValues.push_back(std::get<std::string>(param.value.data).c_str());
-            paramLengths.push_back(std::get<std::string>(param.value.data).size());
+            paramStrings.push_back(std::get<std::string>(param.value.data));
+            paramValues.push_back(paramStrings.back().c_str());
+            paramLengths.push_back(paramStrings.back().size());
             paramFormats.push_back(0);
         } else if (std::holds_alternative<double>(param.value.data)) {
-            std::string val = std::to_string(std::get<double>(param.value.data));
-            paramValues.push_back(val.c_str());
-            paramLengths.push_back(val.size());
+            double num = std::get<double>(param.value.data);
+            // Check if it's a whole number (integer)
+            if (num == static_cast<long long>(num)) {
+                // Format as integer
+                paramStrings.push_back(std::to_string(static_cast<long long>(num)));
+            } else {
+                // Format as decimal
+                paramStrings.push_back(std::to_string(num));
+            }
+            paramValues.push_back(paramStrings.back().c_str());
+            paramLengths.push_back(paramStrings.back().size());
             paramFormats.push_back(0);
         } else if (std::holds_alternative<bool>(param.value.data)) {
-            paramValues.push_back(std::get<bool>(param.value.data) ? "true" : "false");
-            paramLengths.push_back(0);
+            paramStrings.push_back(std::get<bool>(param.value.data) ? "true" : "false");
+            paramValues.push_back(paramStrings.back().c_str());
+            paramLengths.push_back(paramStrings.back().size());
             paramFormats.push_back(0);
         } else {
             paramValues.push_back(nullptr);
@@ -146,7 +170,7 @@ std::vector<std::vector<SqlValue>> PostgreSQLDriver::querySql(const std::string&
         }
     }
 
-    PGresult* res = PQexecParams(conn_, sql.c_str(), params.size(),
+    PGresult* res = PQexecParams(conn_, convertedSql.c_str(), params.size(),
                                  nullptr, paramValues.data(), paramLengths.data(),
                                  paramFormats.data(), 0);
     checkPGresult(res, conn_, "querySql");

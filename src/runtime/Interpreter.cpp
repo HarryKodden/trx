@@ -758,9 +758,13 @@ void executeVariableDeclaration(const trx::ast::VariableDeclarationStatement &va
         } else if (varDecl.typeName == "JSON") {
             // Initialize JSON variables as null
             initialValue = JsonValue(nullptr);
-        } else if (context.interpreter.getRecord(varDecl.typeName)) {
-            // Initialize record variables as empty objects
-            initialValue = JsonValue(JsonValue::Object{});
+        } else if (auto record = context.interpreter.getRecord(varDecl.typeName)) {
+            // Initialize record variables with fields set to null
+            JsonValue::Object obj;
+            for (const auto& field : record->fields) {
+                obj[field.name.name] = JsonValue(nullptr);
+            }
+            initialValue = JsonValue(obj);
         }
     } else if (varDecl.tableName.has_value()) {
         // Initialize table-based variables from database schema
@@ -1133,28 +1137,49 @@ void executeSql(const trx::ast::SqlStatement &sqlStmt, ExecutionContext &context
 
         case trx::ast::SqlStatementKind::SelectInto: {
             std::string sql = sqlStmt.sql;
-            std::vector<JsonValue> hostVars = resolveHostVariablesFromAst(sqlStmt.hostVariables, context);
+
+            // For SELECT INTO, parse the SQL to separate INTO variables from WHERE parameters
+            std::string upperSql = sql;
+            std::transform(upperSql.begin(), upperSql.end(), upperSql.begin(), ::toupper);
+            std::string::size_type intoPos = upperSql.find(" INTO ");
+            size_t intoCount = 0;
+            if (intoPos != std::string::npos) {
+                std::string::size_type fromPos = upperSql.find(" FROM ", intoPos);
+                if (fromPos != std::string::npos) {
+                    std::string intoPart = upperSql.substr(intoPos + 6, fromPos - (intoPos + 6));
+                    size_t pos = 0;
+                    while ((pos = intoPart.find('?', pos)) != std::string::npos) {
+                        ++intoCount;
+                        ++pos;
+                    }
+                    // Remove INTO clause from SQL
+                    sql = upperSql.substr(0, intoPos) + upperSql.substr(fromPos);
+                }
+            }
+
+            // Resolve only the input host variables (after INTO)
+            std::vector<trx::ast::VariableExpression> inputVars(sqlStmt.hostVariables.begin() + intoCount, sqlStmt.hostVariables.end());
+            std::vector<JsonValue> inputHostVars = resolveHostVariablesFromAst(inputVars, context);
+
+            // Parameters are the input host variables
+            auto params = convertHostVarsToParams(inputHostVars);
 
             // Execute the SELECT statement and fetch single row into host variables
-            auto params = convertHostVarsToParams(hostVars);
             try {
                 auto results = context.interpreter.db().querySql(sql, params);
                 if (!results.empty()) {
-                    // Bind first row results to host variables
+                    // Bind first row results to INTO host variables
                     const auto& row = results[0];
                     size_t i = 0;
-                    for (const auto& var : sqlStmt.hostVariables) {
-                        if (i < row.size()) {
-                            resolveVariableTarget(var, context) = row[i];
-                        }
-                        ++i;
+                    for (size_t j = 0; j < intoCount && i < row.size(); ++j) {
+                        resolveVariableTarget(sqlStmt.hostVariables[j], context) = row[i++];
                     }
                     context.interpreter.setSqlCode(0.0); // Success
                     debugPrint("SQL SELECT INTO: " + sqlStmt.sql);
                 } else {
-                    // No rows found - set host variables to null
-                    for (const auto& var : sqlStmt.hostVariables) {
-                        resolveVariableTarget(var, context) = JsonValue(nullptr);
+                    // No rows found - set INTO host variables to null
+                    for (size_t j = 0; j < intoCount; ++j) {
+                        resolveVariableTarget(sqlStmt.hostVariables[j], context) = JsonValue(nullptr);
                     }
                     context.interpreter.setSqlCode(100.0); // No data found
                     debugPrint("SQL SELECT INTO: " + sqlStmt.sql + " - no rows found");
@@ -1413,6 +1438,11 @@ std::optional<JsonValue> Interpreter::execute(const std::string &procedureName, 
         } else {
             // std::cout << "DEBUG execute: Path parameter '" << paramName << "' not found in pathParams" << std::endl;
         }
+    }
+    
+    // Set the input parameter as a local variable
+    if (procedure->input) {
+        context.variables[procedure->input->name.name] = input;
     }
     
     // Bind path parameters to explicit function parameters

@@ -1,6 +1,10 @@
 // TRX Sample - Full CRUD Operations for PERSON, DEPARTMENT, and EMPLOYEE Entities
 // Demonstrates REST API implementation using TRX grammar with PostgreSQL backend
 
+TYPE PERSON FROM TABLE person;
+TYPE EXPLOYEE FROM TABLE employee;
+TYPE DEPARTMENT FROM TABLE department;
+
 // Initialize database with sample data (all tables)
 EXPORT METHOD POST FUNCTION init_database() : JSON {
     // Create DEPARTMENT table
@@ -52,7 +56,7 @@ EXPORT METHOD POST FUNCTION init_database() : JSON {
 
 // GET /persons - Retrieve all persons
 EXPORT METHOD GET FUNCTION persons() : JSON {
-    VAR person FROM TABLE person;
+    VAR person PERSON;
     VAR result JSON := { "persons": [] };
 
     EXEC SQL DECLARE persons CURSOR FOR SELECT id, name, age, active, salary FROM person;
@@ -69,8 +73,8 @@ EXPORT METHOD GET FUNCTION persons() : JSON {
 }
 
 // GET /person/{id} - Retrieve a specific person by ID
-EXPORT METHOD GET FUNCTION person/{id: INTEGER}() : JSON {
-    VAR person JSON := {};
+EXPORT METHOD GET FUNCTION person/{id: INTEGER}() : PERSON {
+    VAR person PERSON;
 
     EXEC SQL SELECT id, name, age, active, salary INTO :person.id, :person.name, :person.age, :person.active, :person.salary
              FROM person WHERE id = :id;
@@ -83,60 +87,40 @@ EXPORT METHOD GET FUNCTION person/{id: INTEGER}() : JSON {
 }
 
 // POST /persons - Create a new person
-EXPORT METHOD POST FUNCTION persons(person_data: JSON) : JSON {
-    VAR name STRING := person_data.name;
-    VAR age INTEGER := person_data.age;
-    VAR active BOOLEAN := person_data.active;
-    VAR salary DECIMAL := person_data.salary;
+EXPORT METHOD POST FUNCTION persons(person: PERSON) : JSON {
 
     // Get the next available ID using SELECT INTO
     VAR new_id INTEGER;
     EXEC SQL SELECT COALESCE(MAX(id), 0) + 1 INTO :new_id FROM person;
 
     // Insert the new person with explicit ID
-    EXEC SQL INSERT INTO person (id, name, age, active, salary) VALUES (:new_id, :name, :age, :active, :salary);
+    EXEC SQL INSERT INTO person (id, name, age, active, salary) VALUES (:new_id, :person.name, :person.age, :person.active, :person.salary);
 
-    RETURN {
-        "id": new_id,
-        "name": name,
-        "age": age,
-        "active": active,
-        "salary": salary,
-        "message": "Person created successfully"
-    };
+    RETURN person;
 }
 
 // PUT /person/{id} - Update an existing person
-EXPORT METHOD PUT FUNCTION person/{id: INTEGER}(person_data: JSON) : JSON {
-    VAR person_id INTEGER := id;
-    VAR name STRING := person_data.name;
-    VAR age INTEGER := person_data.age;
-    VAR active BOOLEAN := person_data.active;
-    VAR salary DECIMAL := person_data.salary;
-
+EXPORT METHOD PUT FUNCTION person/{id: INTEGER}(person: PERSON) : PERSON {
     // Check if person exists using SELECT COUNT INTO
     VAR exists_count INTEGER;
-    EXEC SQL SELECT COUNT(*) INTO :exists_count FROM person WHERE id = :person_id;
+    EXEC SQL SELECT COUNT(*) INTO :exists_count FROM person WHERE id = :id;
 
     IF exists_count = 0 {
-        RETURN {"error": "Person not found", "id": person_id};
+        THROW "Person not found";
+    }
+
+    if not id = person.id {
+        THROW "id mismatch";
     }
 
     // Update the person
-    EXEC SQL UPDATE person SET name = :name, age = :age, active = :active, salary = :salary WHERE id = :person_id;
+    EXEC SQL UPDATE person SET name = :person.name, age = :person.age, active = :person.active, salary = :person.salary WHERE id = :id;
 
-    RETURN {
-        "id": person_id,
-        "name": name,
-        "age": age,
-        "active": active,
-        "salary": salary,
-        "message": "Person updated successfully"
-    };
+    RETURN person;
 }
 
 // DELETE /person/{id} - Delete a person
-EXPORT METHOD DELETE FUNCTION person/{id: INTEGER}() : JSON {
+EXPORT METHOD DELETE PROCEDURE person/{id: INTEGER}() {
     VAR person_id INTEGER := id;
 
     // Check if person exists using SELECT COUNT INTO
@@ -149,11 +133,6 @@ EXPORT METHOD DELETE FUNCTION person/{id: INTEGER}() : JSON {
 
     // Delete the person
     EXEC SQL DELETE FROM person WHERE id = :person_id;
-
-    RETURN {
-        "id": person_id,
-        "message": "Person deleted successfully"
-    };
 }
 
 // ========================================
@@ -163,11 +142,11 @@ EXPORT METHOD DELETE FUNCTION person/{id: INTEGER}() : JSON {
 // GET /departments - Retrieve all departments
 EXPORT METHOD GET FUNCTION departments() : JSON {
     VAR result JSON := { "departments": [] };
+    VAR dept FROM TABLE department;
 
     EXEC SQL DECLARE dept_cursor CURSOR FOR SELECT id, name, budget, location FROM department ORDER BY id;
     EXEC SQL OPEN dept_cursor;
     WHILE sqlcode = 0 {
-        VAR dept JSON := {};
         EXEC SQL FETCH dept_cursor INTO :dept.id, :dept.name, :dept.budget, :dept.location;
         if sqlcode = 0 {
             append(result.departments, dept);
