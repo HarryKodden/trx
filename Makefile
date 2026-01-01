@@ -108,6 +108,10 @@ demo-monitoring:
 	@echo "Starting load testing + monitoring demo..."
 	./tools/demo-monitoring.sh
 
+release:
+	@echo "Creating a new release..."
+	./tools/create-release.sh
+
 clean:
 	rm -rf build
 	rm -rf tools/venv

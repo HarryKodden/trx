@@ -16,3 +16,20 @@ if(TRX_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
 endif()
+
+# Packaging configuration
+set(CPACK_PACKAGE_NAME "trx")
+set(CPACK_PACKAGE_VERSION "1.0.0")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "TRX - Transaction Processing Language")
+set(CPACK_PACKAGE_VENDOR "Harry Kodden")
+set(CPACK_PACKAGE_CONTACT "harry@kodden.nl")
+
+# Create tar.gz package
+set(CPACK_GENERATOR "TGZ")
+set(CPACK_SOURCE_GENERATOR "TGZ")
+
+# Include the binary in the package
+install(TARGETS trx_compiler
+        RUNTIME DESTINATION bin)
+
+include(CPack)
