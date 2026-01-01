@@ -1,0 +1,367 @@
+// TRX Sample - Full CRUD Operations for PERSON, DEPARTMENT, and EMPLOYEE Entities
+// Demonstrates REST API implementation using TRX grammar with PostgreSQL backend
+
+TYPE PERSON FROM TABLE person;
+TYPE EMPLOYEE FROM TABLE employee;
+TYPE DEPARTMENT FROM TABLE department;
+
+// Initialize database with sample data (all tables)
+EXPORT METHOD POST FUNCTION init_database() : JSON {
+    // Create DEPARTMENT table
+    EXEC SQL CREATE TABLE IF NOT EXISTS department (
+        id INTEGER PRIMARY KEY,
+        name VARCHAR(64) NOT NULL,
+        budget DECIMAL(12,2),
+        location VARCHAR(128)
+    );
+
+    // Create PERSON table
+    EXEC SQL CREATE TABLE IF NOT EXISTS person (
+        id INTEGER PRIMARY KEY,
+        name VARCHAR(64),
+        age INTEGER,
+        active BOOLEAN,
+        salary DECIMAL(10,2)
+    );
+
+    // Create EMPLOYEE table
+    EXEC SQL CREATE TABLE IF NOT EXISTS employee (
+        person_id INTEGER PRIMARY KEY REFERENCES person(id),
+        department VARCHAR(32)
+    );
+
+    // Insert sample department data
+    EXEC SQL INSERT INTO department (id, name, budget, location) VALUES
+        (1, 'Engineering', 500000.00, 'Building A'),
+        (2, 'Sales', 300000.00, 'Building B'),
+        (3, 'Marketing', 200000.00, 'Building C')
+    ON CONFLICT (id) DO NOTHING;
+
+    // Insert sample person data
+    EXEC SQL INSERT INTO person (id, name, age, active, salary) VALUES
+        (1, 'Alice Johnson', 30, TRUE, 75000.00),
+        (2, 'Bob Smith', 25, TRUE, 50000.00),
+        (3, 'Charlie Brown', 35, FALSE, 60000.00)
+    ON CONFLICT (id) DO NOTHING;
+
+    // Insert sample employee data
+    EXEC SQL INSERT INTO employee (person_id, department) VALUES
+        (1, 'Engineering'),
+        (2, 'Marketing'),
+        (3, 'Sales')
+    ON CONFLICT (person_id) DO NOTHING;
+
+    RETURN { "status": "database initialized" };
+}
+
+// GET /persons - Retrieve all persons
+EXPORT METHOD GET FUNCTION persons() : JSON {
+    VAR person PERSON;
+    VAR result JSON := { "persons": [] };
+
+    EXEC SQL DECLARE persons CURSOR FOR SELECT id, name, age, active, salary FROM person;
+    EXEC SQL OPEN persons;
+    WHILE sqlcode = 0 {
+        EXEC SQL FETCH persons INTO :person.id, :person.name, :person.age, :person.active, :person.salary;
+        if sqlcode = 0 {
+            append(result.persons, person);
+        }
+    }
+    EXEC SQL CLOSE persons;
+
+    RETURN result;
+}
+
+// GET /person/{id} - Retrieve a specific person by ID
+EXPORT METHOD GET FUNCTION person/{id: INTEGER}() : PERSON {
+    VAR person PERSON;
+
+    EXEC SQL SELECT id, name, age, active, salary INTO :person.id, :person.name, :person.age, :person.active, :person.salary
+             FROM person WHERE id = :id;
+
+    IF sqlcode = 100 {
+        THROW "person not found";
+    }
+
+    RETURN person;
+}
+
+// POST /persons - Create a new person
+EXPORT METHOD POST FUNCTION persons(person: PERSON) : JSON {
+
+    // Get the next available ID using SELECT INTO
+    EXEC SQL SELECT COALESCE(MAX(id), 0) + 1 INTO :person.id FROM person;
+
+    // Insert the new person with explicit ID
+    EXEC SQL INSERT INTO person (id, name, age, active, salary) VALUES (:person.id, :person.name, :person.age, :person.active, :person.salary);
+
+    RETURN person;
+}
+
+// PUT /person/{id} - Update an existing person
+EXPORT METHOD PUT FUNCTION person/{id: INTEGER}(person: PERSON) : PERSON {
+    VAR old_person PERSON;
+
+    EXEC SQL declare C1 cursor for SELECT name, age, active, salary FROM person WHERE id = :id FOR UPDATE OF person;
+
+    EXEC SQL open C1;
+    EXEC SQL fetch C1 into :old_person.name, :old_person.age, :old_person.active, :old_person.salary;
+    
+    IF sqlcode = 100 {
+        EXEC SQL CLOSE C1;
+        THROW "person not found";
+    }
+    
+    EXEC SQL UPDATE person SET name = :person.name, age = :person.age, active = :person.active, salary = :person.salary WHERE CURRENT OF C1;
+    EXEC SQL CLOSE C1;
+
+    person.id := id;
+
+    RETURN person;
+}
+
+// DELETE /person/{id} - Delete a person
+EXPORT METHOD DELETE PROCEDURE person/{id: INTEGER}() {
+    VAR person_id INTEGER := id;
+
+    // Check if person exists using SELECT COUNT INTO
+    VAR exists_count INTEGER;
+    EXEC SQL SELECT COUNT(*) INTO :exists_count FROM person WHERE id = :person_id;
+
+    IF exists_count = 0 {
+        THROW "person not found";
+    }
+
+    // Check if person is still an employee (foreign key constraint)
+    VAR employee_count INTEGER;
+    EXEC SQL SELECT COUNT(*) INTO :employee_count FROM employee WHERE person_id = :person_id;
+
+    IF employee_count > 0 {
+        THROW "cannot delete person: still employed (remove from employee table first)";
+    }
+
+    // Delete the person
+    EXEC SQL DELETE FROM person WHERE id = :person_id;
+}
+
+// ========================================
+// DEPARTMENT CRUD OPERATIONS
+// ========================================
+
+// GET /departments - Retrieve all departments
+EXPORT METHOD GET FUNCTION departments() : JSON {
+    VAR department DEPARTMENT;
+    VAR result JSON := { "departments": [] };
+
+    EXEC SQL DECLARE departments CURSOR FOR SELECT id, name, budget, location FROM department ORDER BY id;
+    EXEC SQL OPEN departments;
+    WHILE sqlcode = 0 {
+        EXEC SQL FETCH departments INTO :department.id, :department.name, :department.budget, :department.location;
+        if sqlcode = 0 {
+            append(result.departments, department);
+        }
+    }
+    EXEC SQL CLOSE departments;
+
+    RETURN result;
+}
+
+// GET /department/{id} - Retrieve a specific department by ID
+EXPORT METHOD GET FUNCTION department/{id: INTEGER}() : DEPARTMENT {
+    VAR department DEPARTMENT;
+
+    EXEC SQL SELECT id, name, budget, location INTO :department.id, :department.name, :department.budget, :department.location
+             FROM department WHERE id = :id;
+
+    IF sqlcode = 100 {
+        THROW "department not found";
+    }
+
+    RETURN department;
+}
+
+// POST /departments - Create a new department
+EXPORT METHOD POST FUNCTION departments(department: DEPARTMENT) : DEPARTMENT {
+
+    // Get the next available ID using SELECT INTO
+    EXEC SQL SELECT COALESCE(MAX(id), 0) + 1 INTO :department.id FROM department;
+
+    // Insert the new department with explicit ID
+    EXEC SQL INSERT INTO department (id, name, budget, location) VALUES (:department.id, :department.name, :department.budget, :department.location);
+
+    RETURN department;
+}
+
+// PUT /department/{id} - Update an existing department
+EXPORT METHOD PUT FUNCTION department/{id: INTEGER}(department: DEPARTMENT) : DEPARTMENT {
+    VAR old_department DEPARTMENT;
+
+    EXEC SQL declare D1 cursor for SELECT name, budget, location FROM department WHERE id = :id FOR UPDATE OF department;
+
+    EXEC SQL open D1;
+    EXEC SQL fetch D1 into :old_department.name, :old_department.budget, :old_department.location;
+    
+    IF sqlcode = 100 {
+        EXEC SQL CLOSE D1;
+        THROW "department not found";
+    }
+    
+    EXEC SQL UPDATE department SET name = :department.name, budget = :department.budget, location = :department.location WHERE CURRENT OF D1;
+    EXEC SQL CLOSE D1;
+
+    department.id := id;
+
+    RETURN department;
+}
+
+// DELETE /department/{id} - Delete a department
+EXPORT METHOD DELETE PROCEDURE department/{id: INTEGER}() {
+    VAR department_id INTEGER := id;
+
+    // Check if department exists using SELECT COUNT INTO
+    VAR exists_count INTEGER;
+    EXEC SQL SELECT COUNT(*) INTO :exists_count FROM department WHERE id = :department_id;
+
+    IF exists_count = 0 {
+        RETURN {"error": "Department not found", "id": department_id};
+    }
+
+    // Delete the department
+    EXEC SQL DELETE FROM department WHERE id = :department_id;
+}
+
+// ========================================
+// EMPLOYEE CRUD OPERATIONS
+// ========================================
+
+// GET /employees - Retrieve all employees
+EXPORT METHOD GET FUNCTION employees() : JSON {
+    VAR employee EMPLOYEE;
+    VAR result JSON := { "employees": [] };
+
+    EXEC SQL DECLARE employees CURSOR FOR SELECT person_id, department FROM employee ORDER BY person_id;
+    EXEC SQL OPEN employees;
+    WHILE sqlcode = 0 {
+        EXEC SQL FETCH employees INTO :employee.person_id, :employee.department;
+        if sqlcode = 0 {
+            append(result.employees, employee);
+        }
+    }
+    EXEC SQL CLOSE employees;
+
+    RETURN result;
+}
+
+// GET /employee/{person_id} - Retrieve a specific employee by person ID
+EXPORT METHOD GET FUNCTION employee/{person_id: INTEGER}() : EMPLOYEE {
+    VAR employee EMPLOYEE;
+
+    EXEC SQL SELECT person_id, department INTO :employee.person_id, :employee.department
+             FROM employee WHERE person_id = :person_id;
+
+    IF sqlcode = 100 {
+        THROW "employee not found";
+    }
+
+    RETURN employee;
+}
+
+// POST /employees - Create a new employee (assign person to department)
+EXPORT METHOD POST FUNCTION employees(employee: EMPLOYEE) : EMPLOYEE {
+
+    // Check if person exists using SELECT COUNT INTO
+    VAR person_count INTEGER;
+    EXEC SQL SELECT COUNT(*) INTO :person_count FROM person WHERE id = :employee.person_id;
+
+    IF person_count = 0 {
+        THROW "person not found";
+    }
+
+    // Check if employee already exists using SELECT COUNT INTO
+    VAR emp_count INTEGER;
+    EXEC SQL SELECT COUNT(*) INTO :emp_count FROM employee WHERE person_id = :employee.person_id;
+
+    IF emp_count > 0 {
+        THROW "employee already exists for this person";
+    }
+
+    // Create the employee record
+    EXEC SQL INSERT INTO employee (person_id, department) VALUES (:employee.person_id, :employee.department);
+
+    RETURN employee;
+}
+
+// PUT /employee/{person_id} - Update an employee's department
+EXPORT METHOD PUT FUNCTION employee/{person_id: INTEGER}(employee: EMPLOYEE) : EMPLOYEE {
+    VAR old_employee EMPLOYEE;
+
+    EXEC SQL declare E1 cursor for SELECT department FROM employee WHERE person_id = :person_id FOR UPDATE OF employee;
+
+    EXEC SQL open E1;
+    EXEC SQL fetch E1 into :old_employee.department;
+    
+    IF sqlcode = 100 {
+        EXEC SQL CLOSE E1;
+        THROW "employee not found";
+    }
+    
+    EXEC SQL UPDATE employee SET department = :employee.department WHERE CURRENT OF E1;
+    EXEC SQL CLOSE E1;
+
+    employee.person_id := person_id;
+
+    RETURN employee;
+}
+
+// DELETE /employee/{person_id} - Remove employee status from a person
+EXPORT METHOD DELETE PROCEDURE employee/{person_id: INTEGER}() {
+    VAR emp_person_id INTEGER := person_id;
+
+    // Check if employee exists using SELECT COUNT INTO
+    VAR exists_count INTEGER;
+    EXEC SQL SELECT COUNT(*) INTO :exists_count FROM employee WHERE person_id = :emp_person_id;
+
+    IF exists_count = 0 {
+        RETURN {"error": "Employee not found", "person_id": emp_person_id};
+    }
+
+    // Delete the employee record
+    EXEC SQL DELETE FROM employee WHERE person_id = :emp_person_id;
+}
+
+// ========================================
+// DEMONSTRATION OF CURSOR USING SYNTAX
+// ========================================
+
+// Example function demonstrating the new OPEN cursor USING syntax
+// This allows declaring a cursor once and reopening it with different parameters
+EXPORT METHOD GET FUNCTION demo_cursor_using() : JSON {
+    VAR results JSON := { "results": [] };
+
+    // Declare cursor once with parameter placeholder
+    EXEC SQL DECLARE person_by_id CURSOR FOR SELECT id, name, age, active, salary FROM person WHERE id = ?;
+
+    // Open and use cursor with different parameters
+    VAR param1 INTEGER := 1;
+    VAR person1 JSON := {};
+    EXEC SQL OPEN person_by_id USING :param1;
+    EXEC SQL FETCH person_by_id INTO :person1.id, :person1.name, :person1.age, :person1.active, :person1.salary;
+    EXEC SQL CLOSE person_by_id;
+    append(results.results, person1);
+
+    VAR param2 INTEGER := 2;
+    VAR person2 JSON := {};
+    EXEC SQL OPEN person_by_id USING :param2;
+    EXEC SQL FETCH person_by_id INTO :person2.id, :person2.name, :person2.age, :person2.active, :person2.salary;
+    EXEC SQL CLOSE person_by_id;
+    append(results.results, person2);
+
+    VAR param3 INTEGER := 3;
+    VAR person3 JSON := {};
+    EXEC SQL OPEN person_by_id USING :param3;
+    EXEC SQL FETCH person_by_id INTO :person3.id, :person3.name, :person3.age, :person3.active, :person3.salary;
+    EXEC SQL CLOSE person_by_id;
+    append(results.results, person3);
+
+    RETURN results;
+}

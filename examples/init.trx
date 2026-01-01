@@ -1,0 +1,40 @@
+TYPE PERSON {
+    ID integer;
+    name CHAR(32);
+    age integer;
+    active boolean;
+    salary decimal(5,2);
+}
+
+TYPE EMPLOYEE {
+    ID integer;
+    DEPARTMENT CHAR(32);
+}
+
+TYPE ADDRESS {
+    STREET CHAR(64);
+    ZIP INTEGER;
+}
+
+
+PROCEDURE init_database() {
+    EXEC SQL CREATE TABLE IF NOT EXISTS address (street TEXT, zip INTEGER);
+
+    EXEC SQL CREATE TABLE IF NOT EXISTS person (id INTEGER PRIMARY KEY, name TEXT, age INTEGER, active INTEGER, salary NUMERIC);
+
+    EXEC SQL CREATE TABLE IF NOT EXISTS employee (person_id INTEGER PRIMARY KEY, department TEXT);
+
+    EXEC SQL INSERT INTO employee (person_id, department) VALUES (1, 'Engineering');
+    EXEC SQL INSERT INTO employee (person_id, department) VALUES (2, 'Sales');
+    EXEC SQL INSERT INTO employee (person_id, department) VALUES (3, 'Engineering');
+
+    trace("Database tables initialized successfully");
+}
+
+PROCEDURE drop_tables() {
+    EXEC SQL DROP TABLE IF EXISTS employee;
+    EXEC SQL DROP TABLE IF EXISTS person;
+    EXEC SQL DROP TABLE IF EXISTS address;
+
+    trace("Database tables dropped successfully");
+}
