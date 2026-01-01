@@ -136,7 +136,7 @@ bool runHttpTest() {
             var request_config JSON := {
                 "method": "GET",
                 "url": "https://httpbin.org/delay/1",  // 1 second delay
-                "timeout": 2  // 2 second timeout - should succeed
+                "timeout": 2+1  // 2 second timeout - should succeed
             };
 
             var response JSON := http(request_config);

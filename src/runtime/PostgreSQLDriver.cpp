@@ -78,18 +78,21 @@ void PostgreSQLDriver::executeSql(const std::string& sql, const std::vector<SqlP
         pos += replacement.length();
     }
 
-    std::cout << "SQL EXEC: " << convertedSql << std::endl;
-
     std::vector<std::string> paramStrings;
     std::vector<const char*> paramValues;
     std::vector<int> paramLengths;
     std::vector<int> paramFormats;
+    paramStrings.reserve(params.size()); // prevent reallocation that invalidates c_str()
+    paramValues.reserve(params.size());
+    paramLengths.reserve(params.size());
+    paramFormats.reserve(params.size());
     for (const auto& param : params) {
         if (std::holds_alternative<std::string>(param.value.data)) {
-            paramStrings.push_back(std::get<std::string>(param.value.data));
+            std::string str = std::get<std::string>(param.value.data);
+            paramStrings.push_back(str);
             paramValues.push_back(paramStrings.back().c_str());
-            paramLengths.push_back(paramStrings.back().size());
-            paramFormats.push_back(0); // text
+            paramLengths.push_back(0); // 0 for text format (null-terminated)
+            paramFormats.push_back(0); // text format
         } else if (std::holds_alternative<double>(param.value.data)) {
             double num = std::get<double>(param.value.data);
             // Check if it's a whole number (integer)
@@ -101,12 +104,12 @@ void PostgreSQLDriver::executeSql(const std::string& sql, const std::vector<SqlP
                 paramStrings.push_back(std::to_string(num));
             }
             paramValues.push_back(paramStrings.back().c_str());
-            paramLengths.push_back(paramStrings.back().size());
+            paramLengths.push_back(0); // 0 for text format (null-terminated)
             paramFormats.push_back(0);
         } else if (std::holds_alternative<bool>(param.value.data)) {
             paramStrings.push_back(std::get<bool>(param.value.data) ? "true" : "false");
             paramValues.push_back(paramStrings.back().c_str());
-            paramLengths.push_back(paramStrings.back().size());
+            paramLengths.push_back(0); // 0 for text format (null-terminated)
             paramFormats.push_back(0);
         } else {
             paramValues.push_back(nullptr);
@@ -133,18 +136,20 @@ std::vector<std::vector<SqlValue>> PostgreSQLDriver::querySql(const std::string&
         pos += replacement.length();
     }
 
-    std::cout << "SQL QUERY: " << convertedSql << std::endl;
-
     std::vector<std::string> paramStrings;
     std::vector<const char*> paramValues;
     std::vector<int> paramLengths;
     std::vector<int> paramFormats;
+    paramStrings.reserve(params.size()); // prevent reallocation that invalidates c_str()
+    paramValues.reserve(params.size());
+    paramLengths.reserve(params.size());
+    paramFormats.reserve(params.size());
     for (const auto& param : params) {
         if (std::holds_alternative<std::string>(param.value.data)) {
             paramStrings.push_back(std::get<std::string>(param.value.data));
             paramValues.push_back(paramStrings.back().c_str());
-            paramLengths.push_back(paramStrings.back().size());
-            paramFormats.push_back(0);
+            paramLengths.push_back(0); // 0 for text format (null-terminated)
+            paramFormats.push_back(0); // text
         } else if (std::holds_alternative<double>(param.value.data)) {
             double num = std::get<double>(param.value.data);
             // Check if it's a whole number (integer)
@@ -156,12 +161,12 @@ std::vector<std::vector<SqlValue>> PostgreSQLDriver::querySql(const std::string&
                 paramStrings.push_back(std::to_string(num));
             }
             paramValues.push_back(paramStrings.back().c_str());
-            paramLengths.push_back(paramStrings.back().size());
+            paramLengths.push_back(0); // 0 for text format (null-terminated)
             paramFormats.push_back(0);
         } else if (std::holds_alternative<bool>(param.value.data)) {
             paramStrings.push_back(std::get<bool>(param.value.data) ? "true" : "false");
             paramValues.push_back(paramStrings.back().c_str());
-            paramLengths.push_back(paramStrings.back().size());
+            paramLengths.push_back(0); // 0 for text format (null-terminated)
             paramFormats.push_back(0);
         } else {
             paramValues.push_back(nullptr);
@@ -207,8 +212,33 @@ std::vector<std::vector<SqlValue>> PostgreSQLDriver::querySql(const std::string&
 void PostgreSQLDriver::openCursor(const std::string& name, const std::string& sql, const std::vector<SqlParameter>& params) {
     closeCursor(name); // Close if already exists
 
-    std::string declareSql = "DECLARE " + name + " CURSOR FOR " + sql;
-    executeSql(declareSql, params);
+    std::string query = sql;
+    // Replace ? with actual values for DECLARE
+    size_t paramIdx = 0;
+    size_t pos = 0;
+    while ((pos = query.find('?', pos)) != std::string::npos && paramIdx < params.size()) {
+        const auto& param = params[paramIdx++];
+        std::string value;
+        if (std::holds_alternative<std::string>(param.value.data)) {
+            value = std::get<std::string>(param.value.data);
+        } else if (std::holds_alternative<double>(param.value.data)) {
+            double num = std::get<double>(param.value.data);
+            if (num == static_cast<long long>(num)) {
+                value = std::to_string(static_cast<long long>(num));
+            } else {
+                value = std::to_string(num);
+            }
+        } else if (std::holds_alternative<bool>(param.value.data)) {
+            value = std::get<bool>(param.value.data) ? "true" : "false";
+        } else {
+            value = "null";
+        }
+        query.replace(pos, 1, value);
+        pos += value.length();
+    }
+
+    std::string declareSql = "DECLARE " + name + " CURSOR FOR " + query;
+    executeSql(declareSql);  // No params needed
     
     // Store the original SQL for potential reopening
     cursorSql_[name] = sql;
@@ -237,9 +267,34 @@ void PostgreSQLDriver::openDeclaredCursorWithParams(const std::string& name, con
     // Close existing cursor if open
     closeCursor(name);
     
+    std::string query = sqlIt->second;
+    // Replace ? with actual values
+    size_t paramIdx = 0;
+    size_t pos = 0;
+    while ((pos = query.find('?', pos)) != std::string::npos && paramIdx < params.size()) {
+        const auto& param = params[paramIdx++];
+        std::string value;
+        if (std::holds_alternative<std::string>(param.value.data)) {
+            value = std::get<std::string>(param.value.data);
+        } else if (std::holds_alternative<double>(param.value.data)) {
+            double num = std::get<double>(param.value.data);
+            if (num == static_cast<long long>(num)) {
+                value = std::to_string(static_cast<long long>(num));
+            } else {
+                value = std::to_string(num);
+            }
+        } else if (std::holds_alternative<bool>(param.value.data)) {
+            value = std::get<bool>(param.value.data) ? "true" : "false";
+        } else {
+            value = "null";
+        }
+        query.replace(pos, 1, value);
+        pos += value.length();
+    }
+    
     // Re-declare the cursor with new parameters
-    std::string declareSql = "DECLARE " + name + " CURSOR FOR " + sqlIt->second;
-    executeSql(declareSql, params);
+    std::string declareSql = "DECLARE " + name + " CURSOR FOR " + query;
+    executeSql(declareSql);
     
     cursors_[name] = true;
 }

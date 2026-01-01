@@ -1,8 +1,14 @@
 // TRX Sample - Full CRUD Operations for PERSON, DEPARTMENT, and EMPLOYEE Entities
 // Demonstrates REST API implementation using TRX grammar with PostgreSQL backend
 
-TYPE PERSON FROM TABLE person;
-TYPE EXPLOYEE FROM TABLE employee;
+TYPE PERSON {
+    id integer;
+    name VARCHAR;
+    age integer;
+    active boolean;
+    salary decimal(12,2);
+}
+TYPE EMPLOYEE FROM TABLE employee;
 TYPE DEPARTMENT FROM TABLE department;
 
 // Initialize database with sample data (all tables)
@@ -101,20 +107,16 @@ EXPORT METHOD POST FUNCTION persons(person: PERSON) : JSON {
 
 // PUT /person/{id} - Update an existing person
 EXPORT METHOD PUT FUNCTION person/{id: INTEGER}(person: PERSON) : PERSON {
-    // Check if person exists using SELECT COUNT INTO
-    VAR exists_count INTEGER;
-    EXEC SQL SELECT COUNT(*) INTO :exists_count FROM person WHERE id = :id;
+    VAR old_person PERSON;
 
-    IF exists_count = 0 {
-        THROW "Person not found";
-    }
+    EXEC SQL declare C1 cursor for SELECT name, age, active, salary FROM person WHERE id = :id FOR UPDATE OF person;
 
-    if not id = person.id {
-        THROW "id mismatch";
-    }
+    EXEC SQL open C1;
+    EXEC SQL fetch C1 into :old_person.name, :old_person.age, :old_person.active, :old_person.salary;
+    EXEC SQL UPDATE person SET name = :person.name, age = :person.age, active = :person.active, salary = :person.salary WHERE CURRENT OF C1;
+    EXEC SQL CLOSE C1;
 
-    // Update the person
-    EXEC SQL UPDATE person SET name = :person.name, age = :person.age, active = :person.active, salary = :person.salary WHERE id = :id;
+    person.id := id;
 
     RETURN person;
 }

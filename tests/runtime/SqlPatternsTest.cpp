@@ -175,44 +175,6 @@ bool runSqlPatternsTest() {
         }
     }
 
-    // Test SQL statements
-    // std::cout << "Executing test_sql_statements...\n";
-    // const auto outputOpt2 = interpreter.execute("test_sql_statements", input);
-    // if (!outputOpt2) {
-    //     std::cerr << "test_sql_statements should return a value\n";
-    //     return false;
-    // }
-
-    // const auto& results2 = outputOpt2->asObject();
-    // if (results2.find("data") == results2.end()) {
-    //     std::cerr << "test_sql_statements should return data\n";
-    //     return false;
-    // }
-
-    // const auto& stmtResults = results2.at("data").asArray();
-    // std::cout << "SQL statements test returned " << stmtResults.size() << " results\n";
-
-    // // Verify we got expected statements
-    // std::vector<std::string> expectedStatements = {
-    //     "CREATE_TABLE", "INSERT", "UPDATE", "DELETE", "SELECT_COUNT"
-    // };
-
-    // for (const auto& stmt : expectedStatements) {
-    //     bool found = false;
-    //     for (const auto& result : stmtResults) {
-    //         const auto& obj = result.asObject();
-    //         if (obj.find("statement") != obj.end() &&
-    //             obj.at("statement").asString() == stmt) {
-    //             found = true;
-    //             break;
-    //         }
-    //     }
-    //     if (!found) {
-    //         std::cerr << "Expected statement '" << stmt << "' not found in results\n";
-    //         return false;
-    //     }
-    // }
-
     std::cout << "SQL patterns tests passed.\n";
     return true;
 }

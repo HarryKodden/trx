@@ -621,13 +621,15 @@ JsonValue resolveVariableValue(const trx::ast::VariableExpression &variable, Exe
     }
 
     const JsonValue *current = nullptr;
-    auto rootIt = context.variables.find(variable.path.front().identifier);
+    std::string rootVarLower = variable.path.front().identifier;
+    std::transform(rootVarLower.begin(), rootVarLower.end(), rootVarLower.begin(), [](unsigned char c) { return std::tolower(c); });
+    auto rootIt = context.variables.find(rootVarLower);
     if (rootIt == context.variables.end()) {
         // Check global variables
-    auto globalIt = context.interpreter.globalVariables().find(variable.path.front().identifier);
-    if (globalIt != context.interpreter.globalVariables().end()) {
-        current = &globalIt->second;
-    }
+        auto globalIt = context.interpreter.globalVariables().find(rootVarLower);
+        if (globalIt != context.interpreter.globalVariables().end()) {
+            current = &globalIt->second;
+        }
     } else {
         current = &rootIt->second;
     }
@@ -654,7 +656,9 @@ JsonValue resolveVariableValue(const trx::ast::VariableExpression &variable, Exe
                     throw std::runtime_error("Attempted to access field on non-object value");
                 }
                 const auto &object = current->asObject();
-                const auto childIt = object.find(segment.identifier);
+                std::string fieldLower = segment.identifier;
+                std::transform(fieldLower.begin(), fieldLower.end(), fieldLower.begin(), [](unsigned char c) { return std::tolower(c); });
+                const auto childIt = object.find(fieldLower);
                 if (childIt == object.end()) {
                     throw std::runtime_error("Unknown field: " + segment.identifier);
                 }
@@ -679,16 +683,18 @@ JsonValue &resolveVariableTarget(const trx::ast::VariableExpression &variable, E
 
     JsonValue *current = nullptr;
     JsonValue *root = nullptr;
-    auto localIt = context.variables.find(variable.path.front().identifier);
+    std::string rootVarLower = variable.path.front().identifier;
+    std::transform(rootVarLower.begin(), rootVarLower.end(), rootVarLower.begin(), [](unsigned char c) { return std::tolower(c); });
+    auto localIt = context.variables.find(rootVarLower);
     if (localIt != context.variables.end()) {
         root = &localIt->second;
     } else {
-        auto globalIt = context.interpreter.globalVariables().find(variable.path.front().identifier);
+        auto globalIt = context.interpreter.globalVariables().find(rootVarLower);
         if (globalIt != context.interpreter.globalVariables().end()) {
             root = &globalIt->second;
         } else {
             // Create in local variables
-            root = &context.variables[variable.path.front().identifier];
+            root = &context.variables[rootVarLower];
         }
     }
     current = root;
@@ -715,7 +721,9 @@ JsonValue &resolveVariableTarget(const trx::ast::VariableExpression &variable, E
                     *current = JsonValue::object();
                 }
                 auto &object = current->asObject();
-                current = &object[segment.identifier];
+                std::string fieldLower = segment.identifier;
+                std::transform(fieldLower.begin(), fieldLower.end(), fieldLower.begin(), [](unsigned char c) { return std::tolower(c); });
+                current = &object[fieldLower];
             }
         }
     }
@@ -1003,6 +1011,54 @@ void executeSql(const trx::ast::SqlStatement &sqlStmt, ExecutionContext &context
             std::string sql = sqlStmt.sql;
             // Extract host variables from AST
             std::vector<JsonValue> hostVars = resolveHostVariablesFromAst(sqlStmt.hostVariables, context);
+
+            // Special handling for UPDATE WHERE CURRENT OF: rebuild SQL and params for only resolved variables
+            std::string upperSql = sql;
+            std::transform(upperSql.begin(), upperSql.end(), upperSql.begin(), ::toupper);
+            if (upperSql.find("UPDATE") == 0 && upperSql.find("WHERE CURRENT OF") != std::string::npos) {
+                // Parse the UPDATE statement
+                size_t setPos = upperSql.find(" SET ");
+                size_t wherePos = upperSql.find(" WHERE CURRENT OF ");
+                if (setPos != std::string::npos && wherePos != std::string::npos) {
+                    std::string setClause = sql.substr(setPos + 5, wherePos - (setPos + 5));
+                    std::string whereClause = sql.substr(wherePos);
+                    
+                    // Parse assignments in SET clause
+                    std::vector<std::string> assignments;
+                    size_t pos = 0;
+                    while (pos < setClause.size()) {
+                        size_t commaPos = setClause.find(',', pos);
+                        if (commaPos == std::string::npos) {
+                            assignments.push_back(setClause.substr(pos));
+                            break;
+                        }
+                        assignments.push_back(setClause.substr(pos, commaPos - pos));
+                        pos = commaPos + 1;
+                        while (pos < setClause.size() && std::isspace(setClause[pos])) ++pos;
+                    }
+                    
+                    // Rebuild SET clause with only resolved variables
+                    std::string newSetClause;
+                    std::vector<JsonValue> newHostVars;
+                    size_t varIndex = 0;
+                    for (size_t i = 0; i < assignments.size(); ++i) {
+                        if (varIndex < hostVars.size()) {
+                            if (newSetClause.empty()) {
+                                newSetClause = assignments[i];
+                            } else {
+                                newSetClause += ", " + assignments[i];
+                            }
+                            newHostVars.push_back(hostVars[varIndex]);
+                        }
+                        ++varIndex;
+                    }
+                    
+                    if (!newSetClause.empty()) {
+                        sql = upperSql.substr(0, setPos + 5) + newSetClause + whereClause;
+                    }
+                    hostVars = newHostVars;
+                }
+            }
 
             // Execute using database driver
             auto params = convertHostVarsToParams(hostVars);
@@ -1411,10 +1467,8 @@ std::optional<JsonValue> Interpreter::execute(const std::string &procedureName, 
             if (paramType == "INTEGER") {
                 try {
                     paramValue = JsonValue(std::stoi(valueStr));
-                    std::cout << "DEBUG execute: Converted to integer: " << std::get<double>(paramValue.data) << std::endl;
                 } catch (...) {
                     paramValue = JsonValue(0); // Default to 0 on conversion error
-                    std::cout << "DEBUG execute: Conversion to integer failed, using default 0" << std::endl;
                 }
             } else if (paramType == "DECIMAL" || paramType == "DOUBLE") {
                 try {
@@ -1434,7 +1488,6 @@ std::optional<JsonValue> Interpreter::execute(const std::string &procedureName, 
             }
             
             context.variables[paramName] = paramValue;
-            std::cout << "DEBUG execute: Assigned path parameter '" << paramName << "' to context variables" << std::endl;
         } else {
             // std::cout << "DEBUG execute: Path parameter '" << paramName << "' not found in pathParams" << std::endl;
         }

@@ -8,23 +8,23 @@ bool runSwitchStatementTest() {
     std::cout << "Running switch statement test...\n";
     constexpr const char *source = R"TRX(
         TYPE INPUT_TYPE {
-            VALUE INTEGER;
+            value INTEGER;
         }
 
         FUNCTION test_switch(input_type: INPUT_TYPE): INPUT_TYPE {
             var result INPUT_TYPE := input_type;
-            SWITCH input_type.VALUE {
+            SWITCH input_type.value {
                 CASE 1 {
-                    result.VALUE := 10;
+                    result.value := 10;
                 }
                 CASE 2 {
-                    result.VALUE := 20;
+                    result.value := 20;
                 }
                 CASE 3 {
-                    result.VALUE := 30;
+                    result.value := 30;
                 }
                 DEFAULT {
-                    result.VALUE := -1;
+                    result.value := -1;
                 }
             }
             RETURN result;
@@ -46,7 +46,7 @@ bool runSwitchStatementTest() {
     // Test case 1: value = 1
     {
         trx::runtime::JsonValue input = trx::runtime::JsonValue::object();
-        input.asObject()["VALUE"] = trx::runtime::JsonValue(1.0);
+        input.asObject()["value"] = trx::runtime::JsonValue(1.0);
 
         const auto outputOpt = interpreter.execute("test_switch", input);
         if (!outputOpt) {
@@ -55,10 +55,10 @@ bool runSwitchStatementTest() {
         }
         const auto &output = *outputOpt;
 
-        if (!output.isObject() || output.asObject().find("VALUE") == output.asObject().end() || 
-            !std::holds_alternative<double>(output.asObject().at("VALUE").data) || 
-            std::get<double>(output.asObject().at("VALUE").data) != 10.0) {
-            std::cerr << "Expected output.VALUE 10 for input 1, got: " << output << "\n";
+        if (!output.isObject() || output.asObject().find("value") == output.asObject().end() || 
+            !std::holds_alternative<double>(output.asObject().at("value").data) || 
+            std::get<double>(output.asObject().at("value").data) != 10.0) {
+            std::cerr << "Expected output.value 10 for input 1, got: " << output << "\n";
             return false;
         }
         std::cout << "Case 1 (value=1) passed: " << output << "\n";
@@ -67,7 +67,7 @@ bool runSwitchStatementTest() {
     // Test case 2: value = 2
     {
         trx::runtime::JsonValue input = trx::runtime::JsonValue::object();
-        input.asObject()["VALUE"] = trx::runtime::JsonValue(2.0);
+        input.asObject()["value"] = trx::runtime::JsonValue(2.0);
 
         const auto outputOpt = interpreter.execute("test_switch", input);
         if (!outputOpt) {
@@ -76,10 +76,10 @@ bool runSwitchStatementTest() {
         }
         const auto &output = *outputOpt;
 
-        if (!output.isObject() || output.asObject().find("VALUE") == output.asObject().end() || 
-            !std::holds_alternative<double>(output.asObject().at("VALUE").data) || 
-            std::get<double>(output.asObject().at("VALUE").data) != 20.0) {
-            std::cerr << "Expected output.VALUE 20 for input 2, got: " << output << "\n";
+        if (!output.isObject() || output.asObject().find("value") == output.asObject().end() || 
+            !std::holds_alternative<double>(output.asObject().at("value").data) || 
+            std::get<double>(output.asObject().at("value").data) != 20.0) {
+            std::cerr << "Expected output.value 20 for input 2, got: " << output << "\n";
             return false;
         }
         std::cout << "Case 2 (value=2) passed: " << output << "\n";
@@ -88,7 +88,7 @@ bool runSwitchStatementTest() {
     // Test case 3: value = 3
     {
         trx::runtime::JsonValue input = trx::runtime::JsonValue::object();
-        input.asObject()["VALUE"] = trx::runtime::JsonValue(3.0);
+        input.asObject()["value"] = trx::runtime::JsonValue(3.0);
 
         const auto outputOpt = interpreter.execute("test_switch", input);
         if (!outputOpt) {
@@ -97,10 +97,10 @@ bool runSwitchStatementTest() {
         }
         const auto &output = *outputOpt;
 
-        if (!output.isObject() || output.asObject().find("VALUE") == output.asObject().end() || 
-            !std::holds_alternative<double>(output.asObject().at("VALUE").data) || 
-            std::get<double>(output.asObject().at("VALUE").data) != 30.0) {
-            std::cerr << "Expected output.VALUE 30 for input 3, got: " << output << "\n";
+        if (!output.isObject() || output.asObject().find("value") == output.asObject().end() || 
+            !std::holds_alternative<double>(output.asObject().at("value").data) || 
+            std::get<double>(output.asObject().at("value").data) != 30.0) {
+            std::cerr << "Expected output.value 30 for input 3, got: " << output << "\n";
             return false;
         }
         std::cout << "Case 3 (value=3) passed: " << output << "\n";
@@ -109,7 +109,7 @@ bool runSwitchStatementTest() {
     // Test default case: value = 4
     {
         trx::runtime::JsonValue input = trx::runtime::JsonValue::object();
-        input.asObject()["VALUE"] = trx::runtime::JsonValue(4.0);
+        input.asObject()["value"] = trx::runtime::JsonValue(4.0);
 
         const auto outputOpt = interpreter.execute("test_switch", input);
         if (!outputOpt) {
@@ -118,10 +118,10 @@ bool runSwitchStatementTest() {
         }
         const auto &output = *outputOpt;
 
-        if (!output.isObject() || output.asObject().find("VALUE") == output.asObject().end() || 
-            !std::holds_alternative<double>(output.asObject().at("VALUE").data) || 
-            std::get<double>(output.asObject().at("VALUE").data) != -1.0) {
-            std::cerr << "Expected output.VALUE -1 for input 4 (default), got: " << output << "\n";
+        if (!output.isObject() || output.asObject().find("value") == output.asObject().end() || 
+            !std::holds_alternative<double>(output.asObject().at("value").data) || 
+            std::get<double>(output.asObject().at("value").data) != -1.0) {
+            std::cerr << "Expected output.value -1 for input 4 (default), got: " << output << "\n";
             return false;
         }
         std::cout << "Default case (value=4) passed: " << output << "\n";
