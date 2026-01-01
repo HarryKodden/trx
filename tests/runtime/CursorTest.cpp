@@ -110,35 +110,42 @@ bool runCursorTest() {
         return false;
     }
 
-    std::cout << "Parsing successful. Creating interpreter with in-memory SQLite database...\n";
+    std::cout << "Parsing successful.\n";
 
-    // Create interpreter with explicit in-memory SQLite database
-    trx::runtime::DatabaseConfig dbConfig;
-    dbConfig.type = trx::runtime::DatabaseType::SQLITE;
-    dbConfig.databasePath = ":memory:";
+    const auto &module = driver.context().module();
+    
+    // Run tests against all configured database backends
+    const auto backends = getTestDatabaseBackends();
+    std::cout << "Testing against " << backends.size() << " database backend(s)...\n";
+    
+    for (const auto& backend : backends) {
+        std::cout << "\n=== Testing with " << backend.name << " ===\n";
+        
+        auto dbDriver = createTestDatabaseDriver(backend);
+        trx::runtime::Interpreter interpreter(module, std::move(dbDriver));
 
-    auto dbDriver = trx::runtime::createDatabaseDriver(dbConfig);
-    trx::runtime::Interpreter interpreter(driver.context().module(), std::move(dbDriver));
+        trx::runtime::JsonValue input{trx::runtime::JsonValue::Object{}};
 
-    trx::runtime::JsonValue input{trx::runtime::JsonValue::Object{}};
+        // Test basic cursor functionality
+        std::cout << "Executing test_cursor...\n";
+        const auto outputOpt1 = interpreter.execute("test_cursor", input);
+        if (outputOpt1) {
+            std::cerr << "test_cursor procedure should not return a value\n";
+            return false;
+        }
 
-    // Test basic cursor functionality
-    std::cout << "Executing test_cursor...\n";
-    const auto outputOpt1 = interpreter.execute("test_cursor", input);
-    if (outputOpt1) {
-        std::cerr << "test_cursor procedure should not return a value\n";
-        return false;
+        // Test cursor with JSON functionality
+        std::cout << "Executing test_cursor_json...\n";
+        const auto outputOpt2 = interpreter.execute("test_cursor_json", input);
+        if (outputOpt2) {
+            std::cerr << "test_cursor_json procedure should not return a value\n";
+            return false;
+        }
+
+        std::cout << backend.name << " tests passed.\n";
     }
 
-    // Test cursor with JSON functionality
-    std::cout << "Executing test_cursor_json...\n";
-    const auto outputOpt2 = interpreter.execute("test_cursor_json", input);
-    if (outputOpt2) {
-        std::cerr << "test_cursor_json procedure should not return a value\n";
-        return false;
-    }
-
-    std::cout << "Cursor tests passed.\n";
+    std::cout << "All cursor tests passed across all backends.\n";
     return true;
 }
 

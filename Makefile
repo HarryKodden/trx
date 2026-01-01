@@ -30,6 +30,45 @@ lint: docker-dev
 test: docker-dev
 	$(DOCKER_DEV_SHELL) -lc 'cd /workspace/build && ctest --output-on-failure'
 
+test-postgres: docker-dev
+	docker compose up -d postgres
+	@echo "Waiting for PostgreSQL to be ready..."
+	@sleep 2
+	docker run --rm -v "$(PWD)":/workspace --network trx_default \
+		-e TEST_DB_BACKENDS=postgresql \
+		-e POSTGRES_HOST=postgres \
+		-e POSTGRES_PORT=5432 \
+		-e POSTGRES_DB=trx \
+		-e POSTGRES_USER=trx \
+		-e POSTGRES_PASSWORD=password \
+		--entrypoint bash $(DOCKER_DEV) -lc 'cd /workspace/build && ctest --output-on-failure'
+	docker compose down
+
+test-odbc: docker-dev
+	docker compose up -d postgres
+	@echo "Waiting for PostgreSQL to be ready..."
+	@sleep 2
+	docker run --rm -v "$(PWD)":/workspace --network trx_default \
+		-e TEST_DB_BACKENDS=odbc \
+		-e ODBC_CONNECTION_STRING="DRIVER={PostgreSQL Unicode};SERVER=postgres;PORT=5432;DATABASE=trx;UID=trx;PWD=password;" \
+		--entrypoint bash $(DOCKER_DEV) -lc 'cd /workspace/build && ctest --output-on-failure'
+	docker compose down
+
+test-all: docker-dev
+	docker compose up -d postgres
+	@echo "Waiting for PostgreSQL to be ready..."
+	@sleep 2
+	docker run --rm -v "$(PWD)":/workspace --network trx_default \
+		-e TEST_DB_BACKENDS=all \
+		-e POSTGRES_HOST=postgres \
+		-e POSTGRES_PORT=5432 \
+		-e POSTGRES_DB=trx \
+		-e POSTGRES_USER=trx \
+		-e POSTGRES_PASSWORD=password \
+		-e ODBC_CONNECTION_STRING="DRIVER={PostgreSQL Unicode};SERVER=postgres;PORT=5432;DATABASE=trx;UID=trx;PWD=password;" \
+		--entrypoint bash $(DOCKER_DEV) -lc 'cd /workspace/build && ctest --output-on-failure'
+	docker compose down
+
 examples: docker-dev
 	$(DOCKER_DEV_SHELL) -lc 'cd /workspace && for file in examples/*.trx; do echo -n "$$file: "; ./build/src/trx_compiler "$$file" >/dev/null 2>&1 && echo "OK" || echo "FAILED"; done'
 

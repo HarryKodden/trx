@@ -539,6 +539,18 @@ constant_decl
           std::free($2);
           std::free($3);
       }
+    | CONSTANT identifier TRUE SEMICOLON
+      {
+          auto name = std::string($2 ? $2 : "");
+          driver.context().addConstant(name, true, makeLocation(driver, @2));
+          std::free($2);
+      }
+    | CONSTANT identifier FALSE SEMICOLON
+      {
+          auto name = std::string($2 ? $2 : "");
+          driver.context().addConstant(name, false, makeLocation(driver, @2));
+          std::free($2);
+      }
     ;
 
 type_decl

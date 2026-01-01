@@ -2,3 +2,4 @@ build/
 sample.cpp
 TODO.md
 trx_server.db
+docs/MULTI_BACKEND_TESTING.md

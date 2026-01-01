@@ -16,6 +16,7 @@ RUN apt-get update \
        libsqlite3-dev \
        libpq-dev \
        unixodbc-dev \
+       odbc-postgresql \
        pkg-config \
        libcurl4-openssl-dev \
     && rm -rf /var/lib/apt/lists/*

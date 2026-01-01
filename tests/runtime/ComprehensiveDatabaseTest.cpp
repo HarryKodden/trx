@@ -226,15 +226,19 @@ bool runComprehensiveDatabaseTest() {
         return false;
     }
 
-    std::cout << "Parsing successful. Creating interpreter with SQLite database...\n";
+    std::cout << "Parsing successful.\n";
 
-    // Create interpreter with in-memory SQLite database
-    trx::runtime::DatabaseConfig dbConfig;
-    dbConfig.type = trx::runtime::DatabaseType::SQLITE;
-    dbConfig.databasePath = ":memory:";
-
-    auto dbDriver = trx::runtime::createDatabaseDriver(dbConfig);
-    trx::runtime::Interpreter interpreter(driver.context().module(), std::move(dbDriver));
+    const auto &module = driver.context().module();
+    
+    // Run tests against all configured database backends
+    const auto backends = getTestDatabaseBackends();
+    std::cout << "Testing against " << backends.size() << " database backend(s)...\n";
+    
+    for (const auto& backend : backends) {
+        std::cout << "\n=== Testing with " << backend.name << " ===\n";
+        
+        auto dbDriver = createTestDatabaseDriver(backend);
+        trx::runtime::Interpreter interpreter(module, std::move(dbDriver));
 
     trx::runtime::JsonValue input{trx::runtime::JsonValue::Object{}};
 
@@ -266,9 +270,13 @@ bool runComprehensiveDatabaseTest() {
         return false;
     }
 
-    std::cout << "Comprehensive database tests completed successfully!\n";
-    std::cout << "Test results: " << result << "\n";
+    std::cout << "Comprehensive database tests completed successfully!\\n";
+    std::cout << "Test results: " << result << "\\n";
+    
+        std::cout << backend.name << " tests passed.\\n";
+    }
 
+    std::cout << "All comprehensive database tests passed across all backends!\\n";
     return true;
 }
 
