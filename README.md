@@ -429,6 +429,62 @@ docker run --rm -v "$PWD":/workspace trx-runtime /workspace/examples/sample.trx
 docker run --rm -v "$PWD":/workspace -p 8080:8080 trx-runtime serve /workspace/examples/sample.trx
 ```
 
+### Load Testing
+
+TRX includes a comprehensive load testing tool to verify API behavior under heavy concurrent load:
+
+```bash
+# Quick test - 100 requests, 10 concurrent users
+make load-test-quick
+
+# Medium load - 1000 requests, 20 concurrent users
+make load-test-medium
+
+# Heavy load - 10000 requests, 50 concurrent users  
+make load-test-heavy
+
+# Custom configuration
+make load-test ARGS="-n 5000 -c 30 -d 60"
+```
+
+The load tester:
+- Randomly generates valid data for all API endpoints (PERSON, DEPARTMENT, EMPLOYEE)
+- Tests all CRUD operations with weighted distributions (more GETs than POSTs/DELETEs)
+- Tracks response times (min/max/mean/median/P95/P99) and success rates
+- Intelligently reuses created resource IDs for realistic scenarios
+- Supports duration-based or count-based testing
+
+See [tools/LOAD_TESTING.md](tools/LOAD_TESTING.md) for detailed usage and configuration options.
+
+### Monitoring with Prometheus & Grafana
+
+TRX includes an integrated monitoring stack for real-time performance visualization:
+
+```bash
+# Start TRX server with Prometheus and Grafana
+docker compose up -d
+
+# Access the monitoring interfaces
+# - Grafana Dashboard: http://localhost:3000 (admin/admin)
+# - Prometheus: http://localhost:9090
+# - TRX Metrics: http://localhost:8080/metrics
+```
+
+The monitoring stack provides:
+- **Real-time metrics**: Request rates, response times, error rates, active requests
+- **Pre-built Grafana dashboard**: "TRX Server Performance" with 8 visualization panels
+- **Prometheus metrics**: Standard `/metrics` endpoint for integration with other tools
+- **7-day retention**: Historical data for trend analysis
+- **Auto-refresh**: Dashboard updates every 5 seconds
+
+Perfect for:
+- Visualizing load test results in real-time
+- Monitoring production performance
+- Identifying bottlenecks and optimization opportunities
+- Tracking service health and SLA compliance
+
+See [docs/MONITORING.md](docs/MONITORING.md) for detailed setup and usage.
+
 ## Examples
 
 See the `examples/` directory for sample TRX programs:

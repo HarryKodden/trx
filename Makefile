@@ -1,4 +1,4 @@
-.PHONY: all configure compile build lint test examples run serve docker-images clean
+.PHONY: all configure compile build lint test examples run serve docker-images clean load-test load-test-quick load-test-medium load-test-heavy demo-monitoring
 
 DOCKER_DEV?=trx-development
 DOCKER_RUNTIME?=trx-runtime
@@ -82,5 +82,32 @@ serve: docker-runtime
 debug-examples: docker-runtime
 	$(DOCKER_DEV_SHELL) ls -l /workspace/examples
 
+# Load testing targets
+load-test-quick:
+	@echo "Quick load test: 100 requests, 10 concurrent users"
+	./tools/load_test.sh -n 100 -c 10
+
+load-test-medium:
+	@echo "Medium load test: 1000 requests, 20 concurrent users"
+	./tools/load_test.sh -n 1000 -c 20
+
+load-test-heavy:
+	@echo "Heavy load test: 10000 requests, 50 concurrent users"
+	./tools/load_test.sh -n 10000 -c 50
+
+load-test:
+	@echo "Custom load test - use arguments like: make load-test ARGS='-n 5000 -c 30'"
+	@if [ -z "$(ARGS)" ]; then \
+		echo "No ARGS specified, running default: -n 1000 -c 20"; \
+		./tools/load_test.sh -n 1000 -c 20; \
+	else \
+		./tools/load_test.sh $(ARGS); \
+	fi
+
+demo-monitoring:
+	@echo "Starting load testing + monitoring demo..."
+	./tools/demo-monitoring.sh
+
 clean:
 	rm -rf build
+	rm -rf tools/venv

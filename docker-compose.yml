@@ -29,7 +29,48 @@ services:
       DATABASE_CONNECTION_STRING: host=postgres port=5432 dbname=trx user=trx password=password
       # DATABASE_TYPE: ODBC
       # DATABASE_CONNECTION_STRING: DRIVER={PostgreSQL Unicode};SERVER=postgres;PORT=5432;DATABASE=trx;UID=trx;PWD=password;
-      DEBUG: "true"
+      DEBUG: "false"
     volumes:
       - ./examples:/workspace/
     command: ["serve"]
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: trx-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=7d'
+    depends_on:
+      - trx
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: trx-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_DOMAIN=localhost
+      - GF_INSTALL_PLUGINS=
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      # - ./grafana-dashboard.json:/etc/grafana/provisioning/dashboards/trx-dashboard.json
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+  grafana-data:

@@ -50,7 +50,7 @@ struct ExecutionContext {
 };
 
 void debugPrint(const std::string& message) {
-    if (getenv("DEBUG")) {
+    if (getenv("DEBUG") != nullptr && std::string(getenv("DEBUG")) == "true") {
         std::cout << message << std::endl;
     }
 }
