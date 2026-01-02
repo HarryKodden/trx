@@ -223,7 +223,7 @@ EXPORT METHOD DELETE ROUTINE department/{id: INTEGER}() {
     EXEC SQL SELECT COUNT(*) INTO :exists_count FROM department WHERE id = :department_id;
 
     IF exists_count = 0 {
-        RETURN {"error": "Department not found", "id": department_id};
+        THROW "Department not found";
     }
 
     // Delete the department
@@ -322,7 +322,7 @@ EXPORT METHOD DELETE ROUTINE employee/{person_id: INTEGER}() {
     EXEC SQL SELECT COUNT(*) INTO :exists_count FROM employee WHERE person_id = :emp_person_id;
 
     IF exists_count = 0 {
-        RETURN {"error": "Employee not found", "person_id": emp_person_id};
+        THROW "Employee not found";
     }
 
     // Delete the employee record

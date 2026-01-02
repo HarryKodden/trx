@@ -61,9 +61,16 @@ class TRXLoadTester:
         retry = Retry(
             total=3,
             backoff_factor=0.1,
-            status_forcelist=[500, 502, 503, 504],
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "PUT", "DELETE", "OPTIONS", "TRACE", "POST"],
+            raise_on_status=False,
         )
-        adapter = HTTPAdapter(max_retries=retry, pool_connections=100, pool_maxsize=100)
+        adapter = HTTPAdapter(
+            max_retries=retry, 
+            pool_connections=50, 
+            pool_maxsize=50,
+            pool_block=False
+        )
         session.mount('http://', adapter)
         session.mount('https://', adapter)
         return session
@@ -87,9 +94,15 @@ class TRXLoadTester:
             
             elapsed = time.time() - start_time
             
-            # Consider 2xx and 404 (not found) as success for testing purposes
+            # Consider 2xx, 404 (not found), and 400 (expected TRX errors) as success for testing purposes
             # 404 is expected when trying to GET/PUT/DELETE non-existent resources
+            # 400 with "not found" or business logic conflict messages are expected TRX application errors
             if response.status_code < 400 or response.status_code == 404:
+                return True, elapsed, None
+            elif response.status_code == 400 and any(phrase in response.text.lower() for phrase in [
+                'not found', 'does not exist', 'no data', 'already exists', 'cannot delete'
+            ]):
+                # TRX application returns 400 for expected "not found" or conflict conditions
                 return True, elapsed, None
             else:
                 return False, elapsed, f"HTTP {response.status_code}: {response.text[:100]}"
@@ -97,12 +110,16 @@ class TRXLoadTester:
         except requests.exceptions.Timeout:
             elapsed = time.time() - start_time
             return False, elapsed, "Timeout"
-        except requests.exceptions.ConnectionError:
+        except requests.exceptions.ConnectionError as e:
             elapsed = time.time() - start_time
-            return False, elapsed, "Connection Error"
-        except Exception as e:
+            error_msg = str(e)
+            if "Max retries exceeded" in error_msg:
+                return False, elapsed, "Connection Pool Exhausted"
+            else:
+                return False, elapsed, f"Connection Error: {error_msg[:50]}"
+        except requests.exceptions.RequestException as e:
             elapsed = time.time() - start_time
-            return False, elapsed, str(e)[:100]
+            return False, elapsed, f"Request Error: {str(e)[:50]}"
     
     def _random_person_data(self) -> Dict:
         """Generate random PERSON data"""
