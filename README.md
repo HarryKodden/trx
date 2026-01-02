@@ -234,26 +234,26 @@ ROUTINE get_user_data(): JSON {
 
 ```bash
 # Compile and validate a TRX file
-trx_compiler source.trx
+trx source.trx
 
 # Execute a specific routine
-trx_compiler --routine routine_name source.trx
+trx --routine routine_name source.trx
 
 # Start REST API server
-trx_compiler serve --port 8080 source.trx
+trx serve --port 8080 source.trx
 
 # List available routines in a file
-trx_compiler list source.trx
+trx list source.trx
 ```
 
 ### Run Options
 
-- `trx_compiler <source.trx>`: Parse and validate the TRX source file
-- `trx_compiler --routine <name> <source.trx>`: Execute a specific routine
-- `trx_compiler serve [options] <sources...>`: Start HTTP server exposing routines as REST endpoints
+- `trx <source.trx>`: Parse and validate the TRX source file
+- `trx --routine <name> <source.trx>`: Execute a specific routine
+- `trx serve [options] <sources...>`: Start HTTP server exposing routines as REST endpoints
   - `--port <port>`: Server port (default: 8080)
   - `--routine <name>`: Only expose specific routine (default: all)
-- `trx_compiler list <source.trx>`: List all routines defined in the file
+- `trx list <source.trx>`: List all routines defined in the file
 
 ### Database Connection Options
 
@@ -280,7 +280,7 @@ When running in serve mode, TRX automatically generates REST endpoints for each 
 
 ```bash
 # Start server
-trx_compiler serve --port 8080 examples/sample.trx
+trx serve --port 8080 examples/sample.trx
 
 # Call routine via HTTP POST
 curl -X POST http://localhost:8080/process_employee \
@@ -431,7 +431,7 @@ make examples     # Verify examples compile
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 cd build && ctest --output-on-failure
-./src/trx_compiler examples/sample.trx
+./src/trx examples/sample.trx
 ```
 
 ### Docker Build

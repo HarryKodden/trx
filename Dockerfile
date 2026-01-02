@@ -52,9 +52,9 @@ RUN apt-get update \
        pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /workspace/build/src/trx_compiler /usr/local/bin/trx_compiler
+COPY --from=builder /workspace/build/src/trx /usr/local/bin/trx
 
 WORKDIR /workspace
 
-ENTRYPOINT ["/usr/local/bin/trx_compiler"]
+ENTRYPOINT ["/usr/local/bin/trx"]
 CMD ["--help"]

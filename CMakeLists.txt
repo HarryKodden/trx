@@ -29,7 +29,7 @@ set(CPACK_GENERATOR "TGZ")
 set(CPACK_SOURCE_GENERATOR "TGZ")
 
 # Include the binary in the package
-install(TARGETS trx_compiler
+install(TARGETS trx
         RUNTIME DESTINATION bin)
 
 include(CPack)

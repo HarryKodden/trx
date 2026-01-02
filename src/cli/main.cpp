@@ -12,10 +12,10 @@ namespace {
 
 void printUsage() {
     std::cerr << "Usage:\n";
-    std::cerr << "  trx_compiler <source.trx>\n";
-    std::cerr << "  trx_compiler [--routine <name>] [--db-type <type>] [--db-connection <conn>] <source.trx>\n";
-    std::cerr << "  trx_compiler serve [--port <port>] [--threads <count>] [--routine <name>] [--db-type <type>] [--db-connection <conn>] [source paths...]\n";
-    std::cerr << "  trx_compiler list <source.trx>\n";
+    std::cerr << "  trx <source.trx>\n";
+    std::cerr << "  trx [--routine <name>] [--db-type <type>] [--db-connection <conn>] <source.trx>\n";
+    std::cerr << "  trx serve [--port <port>] [--threads <count>] [--routine <name>] [--db-type <type>] [--db-connection <conn>] [source paths...]\n";
+    std::cerr << "  trx list <source.trx>\n";
     std::cerr << "    If no source paths are provided for serve, all .trx files in the current directory are used.\n";
     std::cerr << "\nDatabase options:\n";
     std::cerr << "  --db-type <type>        Database type: sqlite, postgresql, odbc (default: sqlite)\n";
@@ -188,6 +188,13 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
+        // Print any warnings even if parsing succeeded
+        for (const auto &diagnostic : driver.diagnostics().messages()) {
+            if (diagnostic.level == trx::diagnostics::Diagnostic::Level::Warning) {
+                printDiagnostic(diagnostic, sourcePath);
+            }
+        }
+
         std::cout << "Routines in " << sourcePath.string() << ":\n";
         for (const auto &decl : driver.context().module().declarations) {
             if (const auto *proc = std::get_if<trx::ast::ProcedureDecl>(&decl)) {
@@ -224,6 +231,13 @@ int main(int argc, char *argv[]) {
             printDiagnostic(diagnostic, sourcePath);
         }
         return 1;
+    }
+
+    // Print any warnings even if parsing succeeded
+    for (const auto &diagnostic : driver.diagnostics().messages()) {
+        if (diagnostic.level == trx::diagnostics::Diagnostic::Level::Warning) {
+            printDiagnostic(diagnostic, sourcePath);
+        }
     }
 
     std::cout << "Parsed " << sourcePath.string() << " successfully\n";

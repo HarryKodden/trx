@@ -1083,6 +1083,15 @@ int runServer(const std::vector<std::filesystem::path> &sourcePaths, ServeOption
             }
             return 1;
         }
+
+        // Print warnings even if parsing succeeded
+        const auto &diagnostics = driver.diagnostics().messages();
+        for (const auto &diag : diagnostics) {
+            if (diag.level == trx::diagnostics::Diagnostic::Level::Warning) {
+                std::cerr << "Warning in " << file.string() << ": " << diag.message << "\n";
+            }
+        }
+
         modules.push_back(driver.context().module());
     }
 
