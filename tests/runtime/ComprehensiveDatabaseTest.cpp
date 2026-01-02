@@ -12,7 +12,7 @@ bool runComprehensiveDatabaseTest() {
     // Test source code with comprehensive SQL operations
     constexpr const char *source = R"TRX(
         // Test table creation with various data types
-        PROCEDURE test_table_creation() {
+        ROUTINE test_table_creation() {
             EXEC SQL CREATE TABLE test_types (
                 id INTEGER PRIMARY KEY,
                 name VARCHAR(100) NOT NULL,
@@ -44,7 +44,7 @@ bool runComprehensiveDatabaseTest() {
         }
 
         // Test data insertion
-        PROCEDURE test_data_insertion() {
+        ROUTINE test_data_insertion() {
             // Insert departments
             EXEC SQL INSERT INTO departments (dept_id, dept_name, budget, location) VALUES
                 (1, 'Engineering', 500000.00, 'Building A'),
@@ -67,7 +67,7 @@ bool runComprehensiveDatabaseTest() {
         }
 
         // Test SELECT operations
-        FUNCTION test_select_operations() : JSON {
+        ROUTINE test_select_operations() : JSON {
             var results JSON := {};
 
             // Simple SELECT
@@ -118,7 +118,7 @@ bool runComprehensiveDatabaseTest() {
         }
 
         // Test UPDATE operations
-        PROCEDURE test_update_operations() {
+        ROUTINE test_update_operations() {
             // Update single record
             EXEC SQL UPDATE employees SET salary = salary * 1.1 WHERE emp_id = 1;
 
@@ -129,7 +129,7 @@ bool runComprehensiveDatabaseTest() {
         }
 
         // Test DELETE operations
-        PROCEDURE test_delete_operations() {
+        ROUTINE test_delete_operations() {
             // Delete specific record
             EXEC SQL DELETE FROM test_types WHERE id = 1;
 
@@ -140,7 +140,7 @@ bool runComprehensiveDatabaseTest() {
         }
 
         // Test cursor operations with different fetch patterns
-        FUNCTION test_cursor_operations() : JSON {
+        ROUTINE test_cursor_operations() : JSON {
             var results JSON := [];
 
             // Cursor with ORDER BY and LIMIT equivalent
@@ -172,7 +172,7 @@ bool runComprehensiveDatabaseTest() {
         }
 
         // Test error handling
-        PROCEDURE test_error_handling() {
+        ROUTINE test_error_handling() {
             // Try to insert duplicate primary key (should fail)
             TRY {
                 EXEC SQL INSERT INTO departments (dept_id, dept_name) VALUES (1, 'Duplicate');
@@ -190,7 +190,7 @@ bool runComprehensiveDatabaseTest() {
         }
 
         // Main test procedure that runs all tests
-        FUNCTION run_all_database_tests() : JSON {
+        ROUTINE run_all_database_tests() : JSON {
             test_table_creation();
             test_data_insertion();
 

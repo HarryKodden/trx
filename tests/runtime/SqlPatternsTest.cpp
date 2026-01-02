@@ -7,7 +7,7 @@ namespace trx::test {
 bool runSqlPatternsTest() {
     std::cout << "Running SQL patterns test...\n";
     constexpr const char *source = R"TRX(
-        FUNCTION test_cursor_patterns() : JSON {
+        ROUTINE test_cursor_patterns() : JSON {
             // Create test table
             EXEC SQL CREATE TABLE sqlpatternstest (
                 id INTEGER PRIMARY KEY,

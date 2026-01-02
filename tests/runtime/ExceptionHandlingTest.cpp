@@ -9,7 +9,7 @@ bool runExceptionHandlingTests() {
 
     // Test THROW statement parsing
     constexpr const char *throwSource = R"TRX(
-        PROCEDURE test_throw() {
+        ROUTINE test_throw() {
             THROW "error message";
         }
     )TRX";
@@ -36,7 +36,7 @@ bool runExceptionHandlingTests() {
 
     // Test TRY/CATCH statement parsing
     constexpr const char *tryCatchSource = R"TRX(
-        PROCEDURE test_try_catch() {
+        ROUTINE test_try_catch() {
             TRY {
                 THROW "test error";
             } CATCH (ex) {
@@ -105,7 +105,7 @@ bool runExceptionHandlingTests() {
         trx::runtime::JsonValue input = trx::runtime::JsonValue::object();
         auto resultOpt = tryCatchInterpreter.execute("test_try_catch", input);
         if (resultOpt) {
-            return expect(false, "PROCEDURE should not return a value");
+            return expect(false, "ROUTINE should not return a value");
         }
         // Should succeed - exception was caught and procedure completed without returning
     } catch (const std::exception &e) {
@@ -114,7 +114,7 @@ bool runExceptionHandlingTests() {
 
     // Test runtime exception (division by zero)
     constexpr const char *divisionSource = R"TRX(
-        PROCEDURE test_division() {
+        ROUTINE test_division() {
             VAR result := 10 / 0;
         }
     )TRX";

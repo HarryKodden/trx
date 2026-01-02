@@ -11,7 +11,7 @@ bool runSwitchStatementTest() {
             value INTEGER;
         }
 
-        FUNCTION test_switch(input_type: INPUT_TYPE): INPUT_TYPE {
+        ROUTINE test_switch(input_type: INPUT_TYPE): INPUT_TYPE {
             var result INPUT_TYPE := input_type;
             SWITCH input_type.value {
                 CASE 1 {

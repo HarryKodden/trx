@@ -11,7 +11,7 @@ namespace trx::cli {
 
 struct ServeOptions {
     int port{8080};
-    std::optional<std::string> procedure;
+    std::optional<std::string> routine;
     trx::runtime::DatabaseConfig dbConfig;
     size_t threadCount{std::thread::hardware_concurrency()};
 };

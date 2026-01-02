@@ -120,11 +120,10 @@ SQLTEXT      [^\s:;]+
                 }
 
 <INITIAL>EXPORT          { return EXPORT; }
-<INITIAL>PROCEDURE       { return PROCEDURE; }
+<INITIAL>ROUTINE          { return ROUTINE; }
 <INITIAL>[Ll][Ii][Ss][Tt] { return LIST; }
 <INITIAL>[Ii][Nn][Cc][Ll][Uu][Dd][Ee]  { return INCLUDE; }
 <INITIAL>[Cc][Oo][Nn][Ss][Tt][Aa][Nn][Tt] { return CONSTANT; }
-<INITIAL>[Ff][Uu][Nn][Cc][Tt][Ii][Oo][Nn] { return FUNCTION; }
 <INITIAL>[Tt][Yy][Pp][Ee] { return TYPE; }
 <INITIAL>[Ff][Rr][Oo][Mm] { return FROM; }
 <INITIAL>[Tt][Aa][Bb][Ll][Ee] { return TABLE; }

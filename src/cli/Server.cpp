@@ -43,9 +43,7 @@ namespace {
 std::optional<std::pair<const trx::ast::ProcedureDecl *, std::map<std::string, std::string>>> matchPathTemplate(
     const std::string &requestPath, 
     const std::string &requestMethod,
-    const std::map<std::string, const trx::ast::ProcedureDecl *> &procedureLookup) {
-    
-    // Strip leading slash and /api/ prefix from request path for matching
+    const std::map<std::string, const trx::ast::ProcedureDecl *> &routineLookup) {
     std::string path = requestPath;
     if (!path.empty() && path[0] == '/') {
         path = path.substr(1);
@@ -54,14 +52,14 @@ std::optional<std::pair<const trx::ast::ProcedureDecl *, std::map<std::string, s
         path = path.substr(4);
     }
     
-    for (const auto &[key, proc] : procedureLookup) {
+    for (const auto &[key, proc] : routineLookup) {
         const std::string &templatePath = proc->name.pathTemplate;
         
         // Check HTTP method first
         std::string defaultMethod = proc->input ? "POST" : "GET";
         std::string expectedMethod = proc->httpMethod.value_or(defaultMethod);
         if (requestMethod != expectedMethod) {
-            continue; // Method doesn't match, skip this procedure
+            continue; // Method doesn't match, skip this routine
         }
         
         // Simple exact match for now (backward compatibility)
@@ -686,26 +684,26 @@ std::string mapTrxTypeToOpenApi(const std::string &trxType) {
     }
 }
 
-std::string buildSwaggerSpec(const std::map<std::string, const trx::ast::ProcedureDecl *> &procedureLookup, const std::vector<const trx::ast::RecordDecl *> &records, [[maybe_unused]] int port) {
+std::string buildSwaggerSpec(const std::map<std::string, const trx::ast::ProcedureDecl *> &routineLookup, const std::vector<const trx::ast::RecordDecl *> &records, [[maybe_unused]] int port) {
     std::ostringstream spec;
     spec << R"(
 {
   "openapi": "3.0.0",
   "info": {
-    "title": "TRX Procedure Playground",
+    "title": "TRX Routine Playground",
     "version": "0.1.0"
   },
   "paths": {)";
 
-    // Group procedures by path template
-    std::map<std::string, std::vector<const trx::ast::ProcedureDecl *>> proceduresByPath;
-    for (const auto &[key, proc] : procedureLookup) {
-        proceduresByPath[proc->name.pathTemplate].push_back(proc);
+    // Group routines by path template
+    std::map<std::string, std::vector<const trx::ast::ProcedureDecl *>> routinesByPath;
+    for (const auto &[key, proc] : routineLookup) {
+        routinesByPath[proc->name.pathTemplate].push_back(proc);
     }
 
     // Add paths for each unique path template
     bool firstPath = true;
-    for (const auto &[pathTemplate, procedures] : proceduresByPath) {
+    for (const auto &[pathTemplate, routines] : routinesByPath) {
         if (!firstPath) {
             spec << ",";
         }
@@ -714,7 +712,7 @@ std::string buildSwaggerSpec(const std::map<std::string, const trx::ast::Procedu
         
         // Add operations for this path
         bool firstOperation = true;
-        for (const auto *proc : procedures) {
+        for (const auto *proc : routines) {
             if (!firstOperation) {
                 spec << ",";
             }
@@ -728,7 +726,7 @@ std::string buildSwaggerSpec(const std::map<std::string, const trx::ast::Procedu
             std::transform(lowerMethod.begin(), lowerMethod.end(), lowerMethod.begin(), ::tolower);
             spec << "      \"" << escapeJsonString(lowerMethod) << "\": {\n";
             
-            spec << "        \"summary\": \"Execute " << escapeJsonString(proc->name.baseName) << " procedure\",\n";
+            spec << "        \"summary\": \"Execute " << escapeJsonString(proc->name.baseName) << " routine\",\n";
             
             // Add path parameters if any
             if (!proc->name.pathParameters.empty()) {
@@ -862,16 +860,16 @@ std::string buildSwaggerSpec(const std::map<std::string, const trx::ast::Procedu
     return spec.str();
 }
 
-std::string buildProceduresPayload(const std::vector<std::string> &procedures, const std::string &defaultProcedure) {
+std::string buildProceduresPayload(const std::vector<std::string> &routines, const std::string &defaultRoutine) {
     std::ostringstream out;
-    out << "{\"procedures\":[";
-    for (std::size_t i = 0; i < procedures.size(); ++i) {
+    out << "{\"routines\":[";
+    for (std::size_t i = 0; i < routines.size(); ++i) {
         if (i > 0) {
             out << ',';
         }
-        out << '\"' << escapeJsonString(procedures[i]) << '\"';
+        out << '\"' << escapeJsonString(routines[i]) << '\"';
     }
-    out << "],\"default\":\"" << escapeJsonString(defaultProcedure) << "\"}";
+    out << "],\"default\":\"" << escapeJsonString(defaultRoutine) << "\"}";
     return out.str();
 }
 
@@ -1105,36 +1103,36 @@ int runServer(const std::vector<std::filesystem::path> &sourcePaths, ServeOption
         return 1;
     }
 
-    std::vector<std::string> procedureNames;
-    procedureNames.reserve(callableProcedures.size());
-    std::map<std::string, const trx::ast::ProcedureDecl *> procedureLookup;
+    std::vector<std::string> routineNames;
+    routineNames.reserve(callableProcedures.size());
+    std::map<std::string, const trx::ast::ProcedureDecl *> routineLookup;
     for (const auto *procedure : callableProcedures) {
-        // Use pathTemplate + httpMethod as key to handle multiple procedures with same path but different methods
+        // Use pathTemplate + httpMethod as key to handle multiple routines with same path but different methods
         std::string defaultMethod = procedure->input ? "POST" : "GET";
         std::string httpMethod = procedure->httpMethod.value_or(defaultMethod);
         std::string key = procedure->name.pathTemplate + "|" + httpMethod;
-        auto [_, inserted] = procedureLookup.insert_or_assign(key, procedure);
+        auto [_, inserted] = routineLookup.insert_or_assign(key, procedure);
         if (inserted) {
-            procedureNames.push_back(procedure->name.baseName);
+            routineNames.push_back(procedure->name.baseName);
         }
     }
 
-    std::string defaultProcedure = procedureNames.front();
-    if (options.procedure) {
-        const auto it = procedureLookup.find(*options.procedure);
-        if (it == procedureLookup.end()) {
-            std::cerr << "Procedure '" << *options.procedure << "' not found in module\n";
+    std::string defaultRoutine = routineNames.front();
+    if (options.routine) {
+        const auto it = routineLookup.find(*options.routine);
+        if (it == routineLookup.end()) {
+            std::cerr << "Routine '" << *options.routine << "' not found in module\n";
             return 1;
         }
-        defaultProcedure = *options.procedure;
+        defaultRoutine = *options.routine;
     }
 
     trx::runtime::Interpreter interpreter(combinedModule, trx::runtime::createDatabaseDriver(options.dbConfig));
-    const std::string swaggerSpec = buildSwaggerSpec(procedureLookup, records, options.port);
+    const std::string swaggerSpec = buildSwaggerSpec(routineLookup, records, options.port);
     const std::string swaggerIndex = buildSwaggerIndexPage();
-    const std::string proceduresPayload = buildProceduresPayload(procedureNames, defaultProcedure);
+    const std::string proceduresPayload = buildProceduresPayload(routineNames, defaultRoutine);
 
-    std::cout << "Loaded " << procedureNames.size() << " procedure(s) from " << allSourceFiles.size() << " source file(s)." << std::endl;
+    std::cout << "Loaded " << routineNames.size() << " routine(s) from " << allSourceFiles.size() << " source file(s)." << std::endl;
 
     std::signal(SIGINT, handleSignal);
 
@@ -1181,7 +1179,7 @@ int runServer(const std::vector<std::filesystem::path> &sourcePaths, ServeOption
             break;
         }
 
-        threadPool.enqueueTask([clientFd, &procedureLookup, &interpreter, &interpreterMutex, &swaggerIndex, &swaggerSpec, &proceduresPayload]() {
+        threadPool.enqueueTask([clientFd, &routineLookup, &interpreter, &interpreterMutex, &swaggerIndex, &swaggerSpec, &proceduresPayload]() {
             auto start = std::chrono::high_resolution_clock::now();
             g_metrics.activeRequests++;
             g_metrics.totalRequests++;
@@ -1230,7 +1228,7 @@ int runServer(const std::vector<std::filesystem::path> &sourcePaths, ServeOption
                 response.body = oss.str();
             } else {
                 // Check if path matches a procedure
-                auto matchResult = matchPathTemplate(request.path, request.method, procedureLookup);
+                auto matchResult = matchPathTemplate(request.path, request.method, routineLookup);
                 if (matchResult) {
                     const auto &[procedure, pathParams] = *matchResult;
                     std::lock_guard<std::mutex> lock(interpreterMutex);

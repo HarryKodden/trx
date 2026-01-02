@@ -1,6 +1,6 @@
 INCLUDE init.trx;
 
-PROCEDURE demo_http() {
+ROUTINE demo_http() {
     // Example HTTP GET request
     var get_response := http({
         "method": "GET",

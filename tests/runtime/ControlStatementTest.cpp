@@ -234,7 +234,7 @@ bool runControlStatementTests() {
             RESULT INTEGER;
         }
 
-        FUNCTION branching(sample: SAMPLE): SAMPLE {
+        ROUTINE branching(sample: SAMPLE): SAMPLE {
             var result SAMPLE := sample;
             IF sample.VALUE > 0 {
                 result.RESULT := sample.VALUE;
@@ -244,7 +244,7 @@ bool runControlStatementTests() {
             RETURN result;
         }
 
-        FUNCTION looping(sample: SAMPLE): SAMPLE {
+        ROUTINE looping(sample: SAMPLE): SAMPLE {
             var result SAMPLE := sample;
             WHILE sample.VALUE > 0 {
                 result.RESULT := result.RESULT + 1;
@@ -252,7 +252,7 @@ bool runControlStatementTests() {
             RETURN result;
         }
 
-        FUNCTION switching(sample: SAMPLE): SAMPLE {
+        ROUTINE switching(sample: SAMPLE): SAMPLE {
             var result SAMPLE := sample;
             SWITCH sample.VALUE {
                 CASE 0 {
@@ -268,7 +268,7 @@ bool runControlStatementTests() {
             RETURN result;
         }
 
-        FUNCTION iterating(sample: SAMPLE): SAMPLE {
+        ROUTINE iterating(sample: SAMPLE): SAMPLE {
             var result SAMPLE := sample;
             FOR item IN [1, 2, 3] {
                 result.RESULT := result.RESULT + item;

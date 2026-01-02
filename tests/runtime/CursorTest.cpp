@@ -7,7 +7,7 @@ namespace trx::test {
 bool runCursorTest() {
     std::cout << "Running cursor test...\n";
     constexpr const char *source = R"TRX(
-        FUNCTION test_json_list_from_cursor() : JSON {
+        ROUTINE test_json_list_from_cursor() : JSON {
             EXEC SQL CREATE TABLE cursor_test_table (
                 id INTEGER PRIMARY KEY,
                 name VARCHAR(50),
@@ -57,7 +57,7 @@ bool runCursorTest() {
             RETURN results;
         }
 
-        PROCEDURE test_cursor() {
+        ROUTINE test_cursor() {
             EXEC SQL CREATE TABLE test_table (
                 id INTEGER PRIMARY KEY,
                 name VARCHAR(50),
@@ -94,7 +94,7 @@ bool runCursorTest() {
             // No output assignment needed for procedure
         }
 
-        PROCEDURE test_cursor_json() {
+        ROUTINE test_cursor_json() {
             var cursor_results JSON := test_json_list_from_cursor();
             trace('cursor results fetched successfully');
             // No output assignment needed for procedure

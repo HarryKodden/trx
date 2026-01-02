@@ -7,7 +7,7 @@ namespace trx::test {
 bool runBuiltinTest() {
     std::cout << "Running builtin test...\n";
     constexpr const char *source = R"TRX(
-        FUNCTION create_nested_json() : JSON {
+        ROUTINE create_nested_json() : JSON {
             var result JSON := {
                 "name": "John Doe",
                 "age": 30,
@@ -26,7 +26,7 @@ bool runBuiltinTest() {
             RETURN result;
         }
 
-        PROCEDURE test_builtins() {
+        ROUTINE test_builtins() {
             // Test SqlCode - should be 0 initially
             var sqlcode_val DECIMAL := sqlcode;
             trace('sqlcode=' + sqlcode_val);
@@ -69,7 +69,7 @@ bool runBuiltinTest() {
             // No output assignment needed for procedure
         }
 
-        PROCEDURE test_http() {
+        ROUTINE test_http() {
             // Test HTTP request functionality
             var request_config JSON := {
                 "method": "GET",
