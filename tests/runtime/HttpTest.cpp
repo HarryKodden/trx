@@ -7,7 +7,7 @@ namespace trx::test {
 bool runHttpTest() {
     std::cout << "Running HTTP test...\n";
     constexpr const char *source = R"TRX(
-        PROCEDURE test_http_get() {
+        ROUTINE test_http_get() {
             var request_config JSON := {
                 "method": "GET",
                 "url": "https://httpbin.org/get",
@@ -30,7 +30,7 @@ bool runHttpTest() {
             }
         }
 
-        PROCEDURE test_http_post() {
+        ROUTINE test_http_post() {
             var request_config JSON := {
                 "method": "POST",
                 "url": "https://httpbin.org/post",
@@ -57,7 +57,7 @@ bool runHttpTest() {
             }
         }
 
-        PROCEDURE test_http_put() {
+        ROUTINE test_http_put() {
             var request_config JSON := {
                 "method": "PUT",
                 "url": "https://httpbin.org/put",
@@ -79,7 +79,7 @@ bool runHttpTest() {
             // PUT test completed
         }
 
-        PROCEDURE test_http_delete() {
+        ROUTINE test_http_delete() {
             var request_config JSON := {
                 "method": "DELETE",
                 "url": "https://httpbin.org/delete",
@@ -96,7 +96,7 @@ bool runHttpTest() {
             // DELETE test completed
         }
 
-        PROCEDURE test_http_with_query_params() {
+        ROUTINE test_http_with_query_params() {
             var request_config JSON := {
                 "method": "GET",
                 "url": "https://httpbin.org/get?param1=value1&param2=value2",
@@ -117,7 +117,7 @@ bool runHttpTest() {
             }
         }
 
-        PROCEDURE test_http_error_handling() {
+        ROUTINE test_http_error_handling() {
             // Test with invalid URL - this should fail gracefully
             var request_config JSON := {
                 "method": "GET",
@@ -132,7 +132,7 @@ bool runHttpTest() {
             // Error handling test completed
         }
 
-        PROCEDURE test_http_timeout() {
+        ROUTINE test_http_timeout() {
             var request_config JSON := {
                 "method": "GET",
                 "url": "https://httpbin.org/delay/1",  // 1 second delay

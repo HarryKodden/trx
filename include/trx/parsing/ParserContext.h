@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -35,6 +36,7 @@ public:
     void finalize();
 
 private:
+    void checkDiscardedReturns(const std::vector<ast::Statement> &statements, const std::unordered_set<std::string> &routinesWithOutput);
     diagnostics::DiagnosticEngine *diagnostics_;
     ast::Module module_{};
     std::unordered_map<std::string, ast::SourceLocation> recordIndex_;

@@ -17,7 +17,7 @@ TYPE ADDRESS {
 }
 
 
-PROCEDURE init_database() {
+ROUTINE init_database() {
     EXEC SQL CREATE TABLE IF NOT EXISTS address (street TEXT, zip INTEGER);
 
     EXEC SQL CREATE TABLE IF NOT EXISTS person (id INTEGER PRIMARY KEY, name TEXT, age INTEGER, active INTEGER, salary NUMERIC);
@@ -31,7 +31,7 @@ PROCEDURE init_database() {
     trace("Database tables initialized successfully");
 }
 
-PROCEDURE drop_tables() {
+ROUTINE drop_tables() {
     EXEC SQL DROP TABLE IF EXISTS employee;
     EXEC SQL DROP TABLE IF EXISTS person;
     EXEC SQL DROP TABLE IF EXISTS address;

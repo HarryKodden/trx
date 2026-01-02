@@ -17,7 +17,7 @@ bool runCopyProcedureTest() {
             HOME ADDRESS;
         }
 
-        FUNCTION copy_customer(customer: CUSTOMER): CUSTOMER {
+        ROUTINE copy_customer(customer: CUSTOMER): CUSTOMER {
             var result CUSTOMER := customer;
             RETURN result;
         }

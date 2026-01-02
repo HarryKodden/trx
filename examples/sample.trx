@@ -6,7 +6,7 @@ TYPE EMPLOYEE FROM TABLE employee;
 TYPE DEPARTMENT FROM TABLE department;
 
 // Initialize database with sample data (all tables)
-EXPORT METHOD POST FUNCTION init_database() : JSON {
+EXPORT METHOD POST ROUTINE init_database() : JSON {
     // Create DEPARTMENT table
     EXEC SQL CREATE TABLE IF NOT EXISTS department (
         id INTEGER PRIMARY KEY,
@@ -55,7 +55,7 @@ EXPORT METHOD POST FUNCTION init_database() : JSON {
 }
 
 // GET /persons - Retrieve all persons
-EXPORT METHOD GET FUNCTION persons() : JSON {
+EXPORT METHOD GET ROUTINE persons() : JSON {
     VAR person PERSON;
     VAR result JSON := { "persons": [] };
 
@@ -73,7 +73,7 @@ EXPORT METHOD GET FUNCTION persons() : JSON {
 }
 
 // GET /person/{id} - Retrieve a specific person by ID
-EXPORT METHOD GET FUNCTION person/{id: INTEGER}() : PERSON {
+EXPORT METHOD GET ROUTINE person/{id: INTEGER}() : PERSON {
     VAR person PERSON;
 
     EXEC SQL SELECT id, name, age, active, salary INTO :person.id, :person.name, :person.age, :person.active, :person.salary
@@ -87,7 +87,7 @@ EXPORT METHOD GET FUNCTION person/{id: INTEGER}() : PERSON {
 }
 
 // POST /persons - Create a new person
-EXPORT METHOD POST FUNCTION persons(person: PERSON) : JSON {
+EXPORT METHOD POST ROUTINE persons(person: PERSON) : JSON {
 
     // Get the next available ID using SELECT INTO
     EXEC SQL SELECT COALESCE(MAX(id), 0) + 1 INTO :person.id FROM person;
@@ -99,7 +99,7 @@ EXPORT METHOD POST FUNCTION persons(person: PERSON) : JSON {
 }
 
 // PUT /person/{id} - Update an existing person
-EXPORT METHOD PUT FUNCTION person/{id: INTEGER}(person: PERSON) : PERSON {
+EXPORT METHOD PUT ROUTINE person/{id: INTEGER}(person: PERSON) : PERSON {
     VAR old_person PERSON;
 
     EXEC SQL declare C1 cursor for SELECT name, age, active, salary FROM person WHERE id = :id FOR UPDATE OF person;
@@ -121,7 +121,7 @@ EXPORT METHOD PUT FUNCTION person/{id: INTEGER}(person: PERSON) : PERSON {
 }
 
 // DELETE /person/{id} - Delete a person
-EXPORT METHOD DELETE PROCEDURE person/{id: INTEGER}() {
+EXPORT METHOD DELETE ROUTINE person/{id: INTEGER}() {
     VAR person_id INTEGER := id;
 
     // Check if person exists using SELECT COUNT INTO
@@ -149,7 +149,7 @@ EXPORT METHOD DELETE PROCEDURE person/{id: INTEGER}() {
 // ========================================
 
 // GET /departments - Retrieve all departments
-EXPORT METHOD GET FUNCTION departments() : JSON {
+EXPORT METHOD GET ROUTINE departments() : JSON {
     VAR department DEPARTMENT;
     VAR result JSON := { "departments": [] };
 
@@ -167,7 +167,7 @@ EXPORT METHOD GET FUNCTION departments() : JSON {
 }
 
 // GET /department/{id} - Retrieve a specific department by ID
-EXPORT METHOD GET FUNCTION department/{id: INTEGER}() : DEPARTMENT {
+EXPORT METHOD GET ROUTINE department/{id: INTEGER}() : DEPARTMENT {
     VAR department DEPARTMENT;
 
     EXEC SQL SELECT id, name, budget, location INTO :department.id, :department.name, :department.budget, :department.location
@@ -181,7 +181,7 @@ EXPORT METHOD GET FUNCTION department/{id: INTEGER}() : DEPARTMENT {
 }
 
 // POST /departments - Create a new department
-EXPORT METHOD POST FUNCTION departments(department: DEPARTMENT) : DEPARTMENT {
+EXPORT METHOD POST ROUTINE departments(department: DEPARTMENT) : DEPARTMENT {
 
     // Get the next available ID using SELECT INTO
     EXEC SQL SELECT COALESCE(MAX(id), 0) + 1 INTO :department.id FROM department;
@@ -193,7 +193,7 @@ EXPORT METHOD POST FUNCTION departments(department: DEPARTMENT) : DEPARTMENT {
 }
 
 // PUT /department/{id} - Update an existing department
-EXPORT METHOD PUT FUNCTION department/{id: INTEGER}(department: DEPARTMENT) : DEPARTMENT {
+EXPORT METHOD PUT ROUTINE department/{id: INTEGER}(department: DEPARTMENT) : DEPARTMENT {
     VAR old_department DEPARTMENT;
 
     EXEC SQL declare D1 cursor for SELECT name, budget, location FROM department WHERE id = :id FOR UPDATE OF department;
@@ -215,7 +215,7 @@ EXPORT METHOD PUT FUNCTION department/{id: INTEGER}(department: DEPARTMENT) : DE
 }
 
 // DELETE /department/{id} - Delete a department
-EXPORT METHOD DELETE PROCEDURE department/{id: INTEGER}() {
+EXPORT METHOD DELETE ROUTINE department/{id: INTEGER}() {
     VAR department_id INTEGER := id;
 
     // Check if department exists using SELECT COUNT INTO
@@ -235,7 +235,7 @@ EXPORT METHOD DELETE PROCEDURE department/{id: INTEGER}() {
 // ========================================
 
 // GET /employees - Retrieve all employees
-EXPORT METHOD GET FUNCTION employees() : JSON {
+EXPORT METHOD GET ROUTINE employees() : JSON {
     VAR employee EMPLOYEE;
     VAR result JSON := { "employees": [] };
 
@@ -253,7 +253,7 @@ EXPORT METHOD GET FUNCTION employees() : JSON {
 }
 
 // GET /employee/{person_id} - Retrieve a specific employee by person ID
-EXPORT METHOD GET FUNCTION employee/{person_id: INTEGER}() : EMPLOYEE {
+EXPORT METHOD GET ROUTINE employee/{person_id: INTEGER}() : EMPLOYEE {
     VAR employee EMPLOYEE;
 
     EXEC SQL SELECT person_id, department INTO :employee.person_id, :employee.department
@@ -267,7 +267,7 @@ EXPORT METHOD GET FUNCTION employee/{person_id: INTEGER}() : EMPLOYEE {
 }
 
 // POST /employees - Create a new employee (assign person to department)
-EXPORT METHOD POST FUNCTION employees(employee: EMPLOYEE) : EMPLOYEE {
+EXPORT METHOD POST ROUTINE employees(employee: EMPLOYEE) : EMPLOYEE {
 
     // Check if person exists using SELECT COUNT INTO
     VAR person_count INTEGER;
@@ -292,7 +292,7 @@ EXPORT METHOD POST FUNCTION employees(employee: EMPLOYEE) : EMPLOYEE {
 }
 
 // PUT /employee/{person_id} - Update an employee's department
-EXPORT METHOD PUT FUNCTION employee/{person_id: INTEGER}(employee: EMPLOYEE) : EMPLOYEE {
+EXPORT METHOD PUT ROUTINE employee/{person_id: INTEGER}(employee: EMPLOYEE) : EMPLOYEE {
     VAR old_employee EMPLOYEE;
 
     EXEC SQL declare E1 cursor for SELECT department FROM employee WHERE person_id = :person_id FOR UPDATE OF employee;
@@ -314,7 +314,7 @@ EXPORT METHOD PUT FUNCTION employee/{person_id: INTEGER}(employee: EMPLOYEE) : E
 }
 
 // DELETE /employee/{person_id} - Remove employee status from a person
-EXPORT METHOD DELETE PROCEDURE employee/{person_id: INTEGER}() {
+EXPORT METHOD DELETE ROUTINE employee/{person_id: INTEGER}() {
     VAR emp_person_id INTEGER := person_id;
 
     // Check if employee exists using SELECT COUNT INTO
@@ -335,7 +335,7 @@ EXPORT METHOD DELETE PROCEDURE employee/{person_id: INTEGER}() {
 
 // Example function demonstrating the new OPEN cursor USING syntax
 // This allows declaring a cursor once and reopening it with different parameters
-EXPORT METHOD GET FUNCTION demo_cursor_using() : JSON {
+EXPORT METHOD GET ROUTINE demo_cursor_using() : JSON {
     VAR results JSON := { "results": [] };
 
     // Declare cursor once with parameter placeholder

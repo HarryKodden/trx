@@ -31,7 +31,7 @@ TRX provides a comprehensive set of features for transaction processing:
 - **Strong Typing**: Record types, lists, and built-in types (INTEGER, CHAR, BOOLEAN, DECIMAL, etc.)
 - **Automatic Type Definition**: Generate record types automatically from existing database table schemas using `TYPE name FROM TABLE table_name`
 - **Variables and Constants**: Global and local variable declarations with type safety (explicit declarations required)
-- **Functions and Procedures**: Modular code organization with input/output parameters
+- **Routines**: Modular code organization with input/output parameters
 - **Control Flow**: IF-ELSE, WHILE loops, and SWITCH statements with CASE/DEFAULT
 - **Exception Handling**: TRY-CATCH blocks and THROW statements for error management
 - **SQL Integration**: Direct SQL execution with host variables, cursors, and transaction management
@@ -43,7 +43,7 @@ TRX provides a comprehensive set of features for transaction processing:
 - **Database Connectivity**: Support for SQLite, PostgreSQL, and ODBC connections
 - **Transaction Management**: Automatic transaction handling with rollback on errors
 - **HTTP API Client**: Built-in HTTP client for making REST API calls with JSON serialization
-- **REST API Server**: Built-in HTTP server for exposing **exported** procedures as web services
+- **REST API Server**: Built-in HTTP server for exposing **exported** routines as web services
 - **JSON Serialization**: Automatic conversion between TRX records and JSON
 
 ## Grammar Overview
@@ -64,7 +64,7 @@ CONSTANT MIN_SALARY 50000.00;
 CONSTANT COMPANY_NAME "TRX Corporation";
 CONSTANT IS_PRODUCTION TRUE;
 
-FUNCTION calculate_bonus(person: PERSON): PERSON {
+ROUTINE calculate_bonus(person: PERSON): PERSON {
     VAR result := person;
     IF person.AGE > 50 THEN {
         result.AGE := person.AGE + 10;
@@ -72,7 +72,7 @@ FUNCTION calculate_bonus(person: PERSON): PERSON {
     RETURN result;
 }
 
-PROCEDURE process_data() {
+ROUTINE process_data() {
     VAR employees LIST(PERSON);
     
     EXEC_SQL SELECT ID, NAME, AGE FROM employees;
@@ -89,7 +89,7 @@ PROCEDURE process_data() {
     }
 }
 
-EXPORT PROCEDURE send_notification() {
+EXPORT ROUTINE send_notification() {
     VAR request_config JSON := {
         "method": "POST",
         "url": "https://api.example.com/notify",
@@ -125,7 +125,7 @@ EXPORT PROCEDURE send_notification() {
     }
 }
 
-EXPORT METHOD GET FUNCTION get_employee/{id}(id: INTEGER) : EmployeeOutput {
+EXPORT METHOD GET ROUTINE get_employee/{id}(id: INTEGER) : EmployeeOutput {
     // RESTful API with path parameters
     // Path parameters are bound to explicit function parameters
     var result EmployeeOutput := find_employee(id);
@@ -156,7 +156,7 @@ This feature introspects the database at runtime and creates the appropriate TRX
 TRX provides built-in HTTP client functionality for making REST API calls with full JSON request/response handling:
 
 ```trx
-PROCEDURE api_call_example() {
+ROUTINE api_call_example() {
     VAR request_config JSON := {
         "method": "POST",
         "url": "https://jsonplaceholder.typicode.com/posts",
@@ -181,7 +181,7 @@ PROCEDURE api_call_example() {
     }
 }
 
-FUNCTION get_user_data(): JSON {
+ROUTINE get_user_data(): JSON {
     VAR request_config JSON := {
         "method": "GET",
         "url": "https://jsonplaceholder.typicode.com/users/1",
@@ -220,7 +220,7 @@ FUNCTION get_user_data(): JSON {
 - `body`: Response body parsed as JSON
 
 ### Key Constructs
-- **Declarations**: TYPE (manual or from table), CONSTANT, VAR, FUNCTION, PROCEDURE
+- **Declarations**: TYPE (manual or from table), CONSTANT, VAR, ROUTINE, ROUTINE
 - **Statements**: Assignment (:=), SQL execution, HTTP requests, control flow, calls
 - **Expressions**: Arithmetic, comparison, logical, function calls, field access, JSON objects
 - **SQL**: EXEC_SQL, cursors (DECLARE, OPEN, FETCH, CLOSE), host variables (:var)
@@ -234,26 +234,26 @@ FUNCTION get_user_data(): JSON {
 
 ```bash
 # Compile and validate a TRX file
-trx_compiler source.trx
+trx source.trx
 
-# Execute a specific procedure
-trx_compiler --procedure procedure_name source.trx
+# Execute a specific routine
+trx --routine routine_name source.trx
 
 # Start REST API server
-trx_compiler serve --port 8080 source.trx
+trx serve --port 8080 source.trx
 
-# List available procedures in a file
-trx_compiler list source.trx
+# List available routines in a file
+trx list source.trx
 ```
 
 ### Run Options
 
-- `trx_compiler <source.trx>`: Parse and validate the TRX source file
-- `trx_compiler --procedure <name> <source.trx>`: Execute a specific procedure/function
-- `trx_compiler serve [options] <sources...>`: Start HTTP server exposing procedures as REST endpoints
+- `trx <source.trx>`: Parse and validate the TRX source file
+- `trx --routine <name> <source.trx>`: Execute a specific routine
+- `trx serve [options] <sources...>`: Start HTTP server exposing routines as REST endpoints
   - `--port <port>`: Server port (default: 8080)
-  - `--procedure <name>`: Only expose specific procedure (default: all)
-- `trx_compiler list <source.trx>`: List all procedures and functions defined in the file
+  - `--routine <name>`: Only expose specific routine (default: all)
+- `trx list <source.trx>`: List all routines defined in the file
 
 ### Database Connection Options
 
@@ -276,21 +276,21 @@ TRX supports multiple database backends:
 
 ### REST API Server
 
-When running in serve mode, TRX automatically generates REST endpoints for each **exported** procedure:
+When running in serve mode, TRX automatically generates REST endpoints for each **exported** routine:
 
 ```bash
 # Start server
-trx_compiler serve --port 8080 examples/sample.trx
+trx serve --port 8080 examples/sample.trx
 
-# Call procedure via HTTP POST
+# Call routine via HTTP POST
 curl -X POST http://localhost:8080/process_employee \
   -H "Content-Type: application/json" \
   -d '{"ID": 1, "NAME": "John", "AGE": 30}'
 ```
 
-#### Exporting Procedures
+#### Exporting Routines
 
-By default, procedures are not exposed via the REST API. To make a procedure available as a web service, use the `EXPORT` keyword:
+By default, routines are not exposed via the REST API. To make a routine available as a web service, use the `EXPORT` keyword:
 
 ```trx
 TYPE EmployeeInput {
@@ -304,24 +304,24 @@ TYPE EmployeeOutput {
     BONUS DECIMAL;
 }
 
-PROCEDURE internal_calculation(input: EmployeeInput) : EmployeeOutput {
-    // This procedure is internal only
+ROUTINE internal_calculation(input: EmployeeInput) : EmployeeOutput {
+    // This routine is internal only
     var result EmployeeOutput := { ID: input.ID, NAME: input.NAME, BONUS: 0 };
     RETURN result;
 }
 
-EXPORT PROCEDURE process_employee(input: EmployeeInput) : EmployeeOutput {
-    // This procedure is exposed via REST API at /process_employee
+EXPORT ROUTINE process_employee(input: EmployeeInput) : EmployeeOutput {
+    // This routine is exposed via REST API at /process_employee
     var result EmployeeOutput := internal_calculation(input);
     result.BONUS := result.ID * 0.1; // 10% bonus
     RETURN result;
 }
 ```
 
-You can customize the HTTP method and response headers for exported procedures:
+You can customize the HTTP method and response headers for exported routines:
 
 ```trx
-EXPORT METHOD GET PROCEDURE get_employee(id: EmployeeId) : EmployeeOutput {
+EXPORT METHOD GET ROUTINE get_employee(id: EmployeeId) : EmployeeOutput {
     // Exposed as GET /get_employee
     var result EmployeeOutput := find_employee(id.ID);
     RETURN result;
@@ -330,19 +330,19 @@ EXPORT METHOD GET PROCEDURE get_employee(id: EmployeeId) : EmployeeOutput {
 EXPORT METHOD POST HEADERS {
     "X-API-Version": "1.0";
     "Cache-Control": "no-cache";
-} PROCEDURE create_employee(input: EmployeeInput) : EmployeeOutput {
+} ROUTINE create_employee(input: EmployeeInput) : EmployeeOutput {
     // Exposed as POST /create_employee with custom headers
     var result EmployeeOutput := create_employee_record(input);
     RETURN result;
 }
 ```
 
-For functions that return data, use `EXPORT ... FUNCTION`:
+For functions that return data, use `EXPORT ... ROUTINE`:
 
 ```trx
 EXPORT METHOD PUT HEADERS {
     "Content-Type": "application/json";
-} FUNCTION update_employee(id: EmployeeId, input: EmployeeInput) : EmployeeOutput {
+} ROUTINE update_employee(id: EmployeeId, input: EmployeeInput) : EmployeeOutput {
     // Exposed as PUT /update_employee
     var result EmployeeOutput := update_employee_record(id.ID, input);
     RETURN result;
@@ -351,26 +351,26 @@ EXPORT METHOD PUT HEADERS {
 
 Supported HTTP methods: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS`
 
-#### Path Parameters in Procedure Names
+#### Path Parameters in Routine Names
 
-TRX supports RESTful URL patterns with path parameters directly in procedure names. Path parameters are specified using curly braces `{}` and are automatically extracted from the URL and passed to the procedure:
+TRX supports RESTful URL patterns with path parameters directly in routine names. Path parameters are specified using curly braces `{}` and are automatically extracted from the URL and passed to the routine:
 
 ```trx
-EXPORT METHOD GET FUNCTION get_employee/{id}(id: INTEGER) : EmployeeOutput {
+EXPORT METHOD GET ROUTINE get_employee/{id}(id: INTEGER) : EmployeeOutput {
     // Exposed as GET /get_employee/{id}
     // Path parameters are bound to explicit function parameters
     var result EmployeeOutput := find_employee(id);
     RETURN result;
 }
 
-EXPORT METHOD GET FUNCTION get_category_item/{category}/{id}(category: CHAR, id: INTEGER) : ItemOutput {
+EXPORT METHOD GET ROUTINE get_category_item/{category}/{id}(category: CHAR, id: INTEGER) : ItemOutput {
     // Exposed as GET /get_category_item/{category}/{id}
     // Multiple path parameters are bound to explicit function parameters
     var result ItemOutput := find_item(category, id);
     RETURN result;
 }
 
-EXPORT METHOD PUT FUNCTION update_employee/{id}(id: INTEGER, updates: EmployeeInput) : EmployeeOutput {
+EXPORT METHOD PUT ROUTINE update_employee/{id}(id: INTEGER, updates: EmployeeInput) : EmployeeOutput {
     // Exposed as PUT /update_employee/{id}
     // Path parameter 'id' and body parameter 'updates' are both available
     var result EmployeeOutput := update_employee_record(id, updates);
@@ -379,9 +379,9 @@ EXPORT METHOD PUT FUNCTION update_employee/{id}(id: INTEGER, updates: EmployeeIn
 ```
 
 **Path Parameter Rules:**
-- Path parameters are specified in the procedure name using `{parameter_name}` syntax
+- Path parameters are specified in the routine name using `{parameter_name}` syntax
 - Functions with path parameters must declare explicit parameters matching the path parameter names
-- Multiple path parameters are supported: `/procedure/{param1}/{param2}`
+- Multiple path parameters are supported: `/routine/{param1}/{param2}`
 - Path parameters are automatically bound to the declared function parameters
 - Request body parameters (if any) are passed as additional function parameters
 
@@ -405,7 +405,7 @@ The server provides:
 - Swagger/OpenAPI documentation at `/swagger.json`
 - Error handling with proper HTTP status codes
 - Custom HTTP methods and response headers
-- Only `EXPORT` procedures are exposed as REST endpoints
+- Only `EXPORT` routines are exposed as REST endpoints
 
 ---
 
@@ -431,7 +431,7 @@ make examples     # Verify examples compile
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 cd build && ctest --output-on-failure
-./src/trx_compiler examples/sample.trx
+./src/trx examples/sample.trx
 ```
 
 ### Docker Build
@@ -516,7 +516,7 @@ See [docs/MONITORING.md](docs/MONITORING.md) for detailed setup and usage.
 
 See the `examples/` directory for sample TRX programs:
 
-- `sample.trx`: Comprehensive example showing records, functions, procedures, SQL operations, and control flow
+- `sample.trx`: Comprehensive example showing records, routines, SQL operations, and control flow
 - `init.trx`: Database initialization and automatic type definition from tables
 - `exception_test.trx`: Error handling with TRY/CATCH and THROW statements
 - `global_test.trx`: Global variables and function definitions

@@ -12,10 +12,10 @@ namespace {
 
 void printUsage() {
     std::cerr << "Usage:\n";
-    std::cerr << "  trx_compiler <source.trx>\n";
-    std::cerr << "  trx_compiler [--procedure <name>] [--db-type <type>] [--db-connection <conn>] <source.trx>\n";
-    std::cerr << "  trx_compiler serve [--port <port>] [--threads <count>] [--procedure <name>] [--db-type <type>] [--db-connection <conn>] [source paths...]\n";
-    std::cerr << "  trx_compiler list <source.trx>\n";
+    std::cerr << "  trx <source.trx>\n";
+    std::cerr << "  trx [--routine <name>] [--db-type <type>] [--db-connection <conn>] <source.trx>\n";
+    std::cerr << "  trx serve [--port <port>] [--threads <count>] [--routine <name>] [--db-type <type>] [--db-connection <conn>] [source paths...]\n";
+    std::cerr << "  trx list <source.trx>\n";
     std::cerr << "    If no source paths are provided for serve, all .trx files in the current directory are used.\n";
     std::cerr << "\nDatabase options:\n";
     std::cerr << "  --db-type <type>        Database type: sqlite, postgresql, odbc (default: sqlite)\n";
@@ -61,7 +61,7 @@ int main(int argc, char *argv[]) {
     bool listMode = false;
     trx::cli::ServeOptions serveOptions;
     std::vector<std::filesystem::path> sourcePaths;
-    std::optional<std::string> procedureToExecute;
+    std::optional<std::string> routineToExecute;
     trx::runtime::DatabaseConfig dbConfig;
     dbConfig.type = trx::runtime::DatabaseType::SQLITE;
     dbConfig.databasePath = ":memory:";
@@ -93,8 +93,13 @@ int main(int argc, char *argv[]) {
             }
             continue;
         }
-        if ((argument == "--procedure" || argument == "-r") && index + 1 < argc) {
-            procedureToExecute = std::string{argv[++index]};
+        if ((argument == "--routine" || argument == "-r") && index + 1 < argc) {
+            std::string routineName = argv[++index];
+            if (serveMode) {
+                serveOptions.routine = routineName;
+            } else {
+                routineToExecute = routineName;
+            }
             continue;
         }
         if ((argument == "--threads" || argument == "-T") && index + 1 < argc) {
@@ -183,7 +188,14 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
-        std::cout << "Procedures and functions in " << sourcePath.string() << ":\n";
+        // Print any warnings even if parsing succeeded
+        for (const auto &diagnostic : driver.diagnostics().messages()) {
+            if (diagnostic.level == trx::diagnostics::Diagnostic::Level::Warning) {
+                printDiagnostic(diagnostic, sourcePath);
+            }
+        }
+
+        std::cout << "Routines in " << sourcePath.string() << ":\n";
         for (const auto &decl : driver.context().module().declarations) {
             if (const auto *proc = std::get_if<trx::ast::ProcedureDecl>(&decl)) {
                 std::cout << "  " << proc->name.baseName << "\n";
@@ -221,20 +233,27 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    // Print any warnings even if parsing succeeded
+    for (const auto &diagnostic : driver.diagnostics().messages()) {
+        if (diagnostic.level == trx::diagnostics::Diagnostic::Level::Warning) {
+            printDiagnostic(diagnostic, sourcePath);
+        }
+    }
+
     std::cout << "Parsed " << sourcePath.string() << " successfully\n";
 
-    if (procedureToExecute) {
+    if (routineToExecute) {
         auto dbDriver = trx::runtime::createDatabaseDriver(dbConfig);
         trx::runtime::Interpreter interpreter{driver.context().module(), std::move(dbDriver)};
         try {
             trx::runtime::JsonValue input = trx::runtime::JsonValue::object(); // For now, empty input
-            auto result = interpreter.execute(*procedureToExecute, input);
-            std::cout << "Executed procedure '" << *procedureToExecute << "' successfully\n";
+            auto result = interpreter.execute(*routineToExecute, input);
+            std::cout << "Executed routine '" << *routineToExecute << "' successfully\n";
             if (result) {
                 std::cout << "Result: " << *result << "\n";
             }
         } catch (const std::exception &e) {
-            std::cerr << "Error executing procedure '" << *procedureToExecute << "': " << e.what() << "\n";
+            std::cerr << "Error executing routine '" << *routineToExecute << "': " << e.what() << "\n";
             return 1;
         }
     }

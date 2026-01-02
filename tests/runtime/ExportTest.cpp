@@ -10,15 +10,15 @@ bool runExportTest() {
 
     // Test source with both exported and non-exported procedures
     constexpr const char *source = R"TRX(
-        PROCEDURE internal_proc() {
+        ROUTINE internal_proc() {
             trace('internal');
         }
 
-        EXPORT PROCEDURE exported_proc() {
+        EXPORT ROUTINE exported_proc() {
             trace('exported');
         }
 
-        EXPORT PROCEDURE another_exported_proc() {
+        EXPORT ROUTINE another_exported_proc() {
             trace('another exported');
         }
     )TRX";
@@ -85,22 +85,22 @@ bool runExportConfigTest() {
 
     // Test source with HTTP method and headers configuration
     constexpr const char *source = R"TRX(
-        EXPORT PROCEDURE default_proc() {
+        EXPORT ROUTINE default_proc() {
             trace('default POST');
         }
 
-        EXPORT METHOD GET PROCEDURE get_proc() {
+        EXPORT METHOD GET ROUTINE get_proc() {
             trace('GET method');
         }
 
         EXPORT METHOD POST HEADERS {
             "X-API-Version": "1.0";
             "Cache-Control": "no-cache";
-        } PROCEDURE post_with_headers() {
+        } ROUTINE post_with_headers() {
             trace('POST with headers');
         }
 
-        EXPORT METHOD PUT PROCEDURE put_proc() {
+        EXPORT METHOD PUT ROUTINE put_proc() {
             trace('PUT method');
         }
     )TRX";
@@ -153,11 +153,11 @@ bool runExportFunctionTest() {
 
     // Test source with exported functions
     const char *source = R"RAW(
-        FUNCTION get_data() : INTEGER {
+        ROUTINE get_data() : INTEGER {
             RETURN 42;
         }
 
-        FUNCTION process_data(input: INTEGER) : INTEGER {
+        ROUTINE process_data(input: INTEGER) : INTEGER {
             RETURN input * 2;
         }
     )RAW";
@@ -218,15 +218,15 @@ bool runPathParameterTest() {
 
     // Test source with procedures that have path parameters
     constexpr const char *source = R"TRX(
-        EXPORT METHOD GET FUNCTION get_user(id: INTEGER) : INTEGER {
+        EXPORT METHOD GET ROUTINE get_user(id: INTEGER) : INTEGER {
             RETURN id;
         }
 
-        EXPORT METHOD GET FUNCTION get_user_by_id/{id: INTEGER}(id: INTEGER) : INTEGER {
+        EXPORT METHOD GET ROUTINE get_user_by_id/{id: INTEGER}(id: INTEGER) : INTEGER {
             RETURN id;
         }
 
-        EXPORT METHOD POST FUNCTION create_user(user: INTEGER) : INTEGER {
+        EXPORT METHOD POST ROUTINE create_user(user: INTEGER) : INTEGER {
             RETURN user;
         }
     )TRX";

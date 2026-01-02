@@ -431,11 +431,11 @@ JsonValue evaluateFunctionCall(const trx::ast::FunctionCallExpression &call, Exe
             throw;
         }
     }
-    // For user-defined procedures
-    const auto *proc = context.interpreter.getProcedure(call.functionName);
+    // For user-defined routines
+    const auto *proc = context.interpreter.getRoutine(call.functionName);
     if (proc) {
         // if (!proc->output) {
-        //     throw std::runtime_error("Procedure calls cannot be used in expressions");
+        //     throw std::runtime_error("Routine calls cannot be used in expressions");
         // }
         bool hasInput = proc->input.has_value();
         if (hasInput) {
@@ -962,11 +962,11 @@ void executeReturn(const trx::ast::ReturnStatement &returnStmt, ExecutionContext
         JsonValue val = evaluateExpression(returnStmt.value, context);
         throw ReturnException(val);
     } else {
-        // Procedures can have RETURN but without a value
+        // Routines can have RETURN but without a value
         if (returnStmt.value) {
-            throw std::runtime_error("Procedures cannot return values. Use RETURN without a value.");
+            throw std::runtime_error("Routines cannot return values. Use RETURN without a value.");
         }
-        // Just mark that we returned (for procedures, this ends execution)
+        // Just mark that we returned (for routines, this ends execution)
         context.returned = true;
         throw ReturnException(JsonValue(nullptr));  // Use null to indicate procedure return
     }
@@ -1289,7 +1289,7 @@ Interpreter::Interpreter(const trx::ast::Module &module, std::unique_ptr<Databas
     for (const auto &decl : module.declarations) {
         if (std::holds_alternative<ast::ProcedureDecl>(decl)) {
             const auto &proc = std::get<ast::ProcedureDecl>(decl);
-            procedures_[proc.name.baseName] = &proc;
+            routines_[proc.name.baseName] = &proc;
         } else if (std::holds_alternative<ast::RecordDecl>(decl)) {
             const auto &record = std::get<ast::RecordDecl>(decl);
             records_[record.name.name] = &record;
@@ -1369,7 +1369,7 @@ Interpreter::Interpreter(const trx::ast::Module &module, std::unique_ptr<Databas
         } else if (std::holds_alternative<ast::ExpressionStatement>(decl)) {
             executeExpression(std::get<ast::ExpressionStatement>(decl), globalContext);
         } else if (std::holds_alternative<ast::ProcedureDecl>(decl)) {
-            procedures_[std::get<ast::ProcedureDecl>(decl).name.baseName] = &std::get<ast::ProcedureDecl>(decl);
+            routines_[std::get<ast::ProcedureDecl>(decl).name.baseName] = &std::get<ast::ProcedureDecl>(decl);
         } else if (std::holds_alternative<ast::TableDecl>(decl)) {
             // Handle table declarations if needed
         } else if (std::holds_alternative<ast::RecordDecl>(decl)) {
@@ -1386,9 +1386,9 @@ Interpreter::Interpreter(const trx::ast::Module &module, std::unique_ptr<Databas
 
 Interpreter::~Interpreter() = default;
 
-const trx::ast::ProcedureDecl* Interpreter::getProcedure(const std::string &name) const {
-    auto it = procedures_.find(name);
-    return it != procedures_.end() ? it->second : nullptr;
+const trx::ast::ProcedureDecl* Interpreter::getRoutine(const std::string &name) const {
+    auto it = routines_.find(name);
+    return it != routines_.end() ? it->second : nullptr;
 }
 
 const trx::ast::RecordDecl* Interpreter::getRecord(const std::string &name) const {
@@ -1426,8 +1426,8 @@ std::optional<JsonValue> Interpreter::execute(const std::string &procedureName, 
         }
         return {};
     }
-    auto it = procedures_.find(procedureName);
-    if (it == procedures_.end()) {
+    auto it = routines_.find(procedureName);
+    if (it == routines_.end()) {
         throw TrxException("Procedure not found: " + procedureName);
     }
     const auto *procedure = it->second;

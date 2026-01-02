@@ -126,6 +126,42 @@ void ParserContext::finalize() {
     }
 
     pendingParameters_.clear();
+
+    // Check for discarded function return values
+    std::unordered_set<std::string> routinesWithOutput;
+    for (const auto &decl : module_.declarations) {
+        if (const auto *proc = std::get_if<ast::ProcedureDecl>(&decl)) {
+            if (proc->output.has_value()) {
+                routinesWithOutput.insert(proc->name.baseName);
+            }
+        }
+    }
+
+    // Check top-level statements
+    checkDiscardedReturns(module_.statements, routinesWithOutput);
+
+    // Check statements in procedure bodies
+    for (const auto &decl : module_.declarations) {
+        if (const auto *proc = std::get_if<ast::ProcedureDecl>(&decl)) {
+            checkDiscardedReturns(proc->body, routinesWithOutput);
+        }
+    }
+}
+
+void ParserContext::checkDiscardedReturns(const std::vector<ast::Statement> &statements, const std::unordered_set<std::string> &routinesWithOutput) {
+    for (const auto &stmt : statements) {
+        if (const auto *exprStmt = std::get_if<ast::ExpressionStatement>(&stmt.node)) {
+            // Check if this is a function call expression
+            if (const auto *funcCall = std::get_if<ast::FunctionCallExpression>(&exprStmt->expression->node)) {
+                // Check if it's a user-defined routine that returns data
+                if (routinesWithOutput.find(funcCall->functionName) != routinesWithOutput.end()) {
+                    std::ostringstream message;
+                    message << "Return value of function '" << funcCall->functionName << "' is discarded";
+                    diagnosticEngine().report(diagnostics::Diagnostic::Level::Warning, message.str(), stmt.location);
+                }
+            }
+        }
+    }
 }
 
 } // namespace trx::parsing

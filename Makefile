@@ -70,10 +70,10 @@ test-all: docker-dev
 	docker compose down
 
 examples: docker-dev
-	$(DOCKER_DEV_SHELL) -lc 'cd /workspace && for file in examples/*.trx; do echo -n "$$file: "; ./build/src/trx_compiler "$$file" >/dev/null 2>&1 && echo "OK" || echo "FAILED"; done'
+	$(DOCKER_DEV_SHELL) -lc 'cd /workspace && for file in examples/*.trx; do echo -n "$$file: "; ./build/src/trx "$$file" >/dev/null 2>&1 && echo "OK" || echo "FAILED"; done'
 
 run: build
-	$(DOCKER_DEV_SHELL) -lc './build/src/trx_compiler examples/sample.trx'
+	$(DOCKER_DEV_SHELL) -lc './build/src/trx examples/sample.trx'
 
 serve: docker-runtime
 	docker rm -f trx-server || true

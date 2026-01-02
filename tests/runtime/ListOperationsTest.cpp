@@ -7,7 +7,7 @@ namespace trx::test {
 bool runListOperationsTest() {
     std::cout << "Running list operations test...\n";
     constexpr const char *source = R"TRX(
-        FUNCTION test_lists() : INTEGER {
+        ROUTINE test_lists() : INTEGER {
             var numbers list(INTEGER);
 
             append(numbers, 10);

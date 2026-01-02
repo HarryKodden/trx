@@ -2,7 +2,7 @@ VAR config := {"database": "sqlite", "port": 8080, "enabled": true};
 VAR numbers := [1, 2, 3, 4, 5];
 VAR mixed := ["hello", 42, true, {"nested": "object"}];
 
-PROCEDURE main() {
+ROUTINE main() {
     trace("Config: " + config);
     trace("Numbers: " + numbers);
     trace("Mixed: " + mixed);

@@ -1,8 +1,8 @@
-PROCEDURE test_throw() {
+ROUTINE test_throw() {
     THROW "This is a test exception";
 }
 
-PROCEDURE test_try_catch() {
+ROUTINE test_try_catch() {
     TRY {
         THROW "Caught exception";
     } CATCH (ex) {
@@ -10,6 +10,6 @@ PROCEDURE test_try_catch() {
     }
 }
 
-PROCEDURE test_division_by_zero() {
+ROUTINE test_division_by_zero() {
     result := 10 / 0;
 }

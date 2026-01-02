@@ -188,25 +188,25 @@ bool runExpressionAstTests() {
             TEXT CHAR(32);
         }
 
-        FUNCTION numeric_case(sample: SAMPLE): SAMPLE {
+        ROUTINE numeric_case(sample: SAMPLE): SAMPLE {
             var result SAMPLE := sample;
             result.RESULT := sample.VALUE * 2 + 5;
             RETURN result;
         }
 
-        FUNCTION boolean_case(sample: SAMPLE): SAMPLE {
+        ROUTINE boolean_case(sample: SAMPLE): SAMPLE {
             var result SAMPLE := sample;
             result.FLAG := sample.VALUE > 10 AND NOT (sample.VALUE = 0);
             RETURN result;
         }
 
-        FUNCTION bool_literal_case(sample: SAMPLE): SAMPLE {
+        ROUTINE bool_literal_case(sample: SAMPLE): SAMPLE {
             var result SAMPLE := sample;
             result.FLAG := TRUE OR FALSE;
             RETURN result;
         }
 
-        FUNCTION text_case(sample: SAMPLE): SAMPLE {
+        ROUTINE text_case(sample: SAMPLE): SAMPLE {
             var result SAMPLE := sample;
             result.TEXT := "constant";
             RETURN result;

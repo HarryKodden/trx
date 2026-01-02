@@ -115,12 +115,12 @@ if(POSTGRESQL_SUPPORTED)
 endif()
 target_link_libraries(trx_core PRIVATE CURL::libcurl)
 
-add_executable(trx_compiler
+add_executable(trx
   cli/main.cpp
   cli/Server.cpp
 )
 
-target_link_libraries(trx_compiler
+target_link_libraries(trx
   PRIVATE
     trx_core
 )

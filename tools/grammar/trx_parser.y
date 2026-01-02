@@ -434,7 +434,7 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 
 %token <text> IDENT STRING PATH SQL_TEXT SQL_VARIABLE
 %token <number> NUMBER
-%token INCLUDE CONSTANT FUNCTION PROCEDURE TABLE PRIMARY KEY NULL_K TYPE FROM VAR LIST
+%token INCLUDE CONSTANT ROUTINE TABLE PRIMARY KEY NULL_K TYPE FROM VAR LIST
 %token EXPORT
 %token IF ELSE WHILE FOR IN SWITCH CASE DEFAULT CALL TRY CATCH THROW RETURN
 %token EXEC_SQL
@@ -488,8 +488,8 @@ definition
     : include_decl
     | constant_decl
     | type_decl
-    | function_decl
-    | procedure_decl
+    | routine_decl
+    | routine_decl
     | statement
       {
           auto stmt = statementFrom($1);
@@ -798,8 +798,63 @@ format_decl
       }
     ;
 
-function_decl
-    : EXPORT procedure_config FUNCTION procedure_name LPAREN input_type RPAREN ':' type_name procedure_body
+routine_decl
+    : EXPORT procedure_config ROUTINE procedure_name LPAREN input_type RPAREN procedure_body
+        {
+            trx::ast::ProcedureDecl procedure;
+            auto procName = static_cast<trx::ast::ProcedureName*>($4);
+            if (procName) {
+                procedure.name = std::move(*procName);
+                delete procName;
+            }
+            procedure.isExported = true;
+
+            if ($6) {
+                procedure.input = *static_cast<trx::ast::ParameterDecl*>($6);
+                delete static_cast<trx::ast::ParameterDecl*>($6);
+            }
+
+            // Apply configuration from procedure_config
+            auto config = static_cast<trx::ast::ProcedureConfig*>($2);
+            if (config) {
+                procedure.httpMethod = config->httpMethod;
+                procedure.httpHeaders = std::move(config->httpHeaders);
+                delete config;
+            }
+
+            auto body = statementListFrom($8);
+            if (body) {
+                procedure.body = std::move(*body);
+                delete body;
+            }
+
+            procedure.isFunction = false;
+            driver.context().addProcedure(std::move(procedure));
+        }
+    | ROUTINE procedure_name LPAREN input_type RPAREN procedure_body
+        {
+            trx::ast::ProcedureDecl procedure;
+            auto procName = static_cast<trx::ast::ProcedureName*>($2);
+            if (procName) {
+                procedure.name = std::move(*procName);
+                delete procName;
+            }
+
+            if ($4) {
+                procedure.input = *static_cast<trx::ast::ParameterDecl*>($4);
+                delete static_cast<trx::ast::ParameterDecl*>($4);
+            }
+
+            auto body = statementListFrom($6);
+            if (body) {
+                procedure.body = std::move(*body);
+                delete body;
+            }
+
+            procedure.isFunction = false;
+            driver.context().addProcedure(std::move(procedure));
+        }
+    | EXPORT procedure_config ROUTINE procedure_name LPAREN input_type RPAREN ':' type_name procedure_body
         {
             trx::ast::ProcedureDecl procedure;
             auto procName = static_cast<trx::ast::ProcedureName*>($4);
@@ -836,7 +891,7 @@ function_decl
             procedure.isFunction = true;
             driver.context().addProcedure(std::move(procedure));
         }
-    | FUNCTION procedure_name LPAREN input_type RPAREN ':' type_name procedure_body
+    | ROUTINE procedure_name LPAREN input_type RPAREN ':' type_name procedure_body
         {
             trx::ast::ProcedureDecl procedure;
             auto procName = static_cast<trx::ast::ProcedureName*>($2);
@@ -864,7 +919,7 @@ function_decl
             procedure.isFunction = true;
             driver.context().addProcedure(std::move(procedure));
         }
-    | EXPORT procedure_config FUNCTION procedure_name '(' ')' ':' type_name procedure_body
+    | EXPORT procedure_config ROUTINE procedure_name '(' ')' ':' type_name procedure_body
         {
             trx::ast::ProcedureDecl procedure;
             auto procName = static_cast<trx::ast::ProcedureName*>($4);
@@ -874,7 +929,7 @@ function_decl
             }
             procedure.isExported = true;
 
-            // No input parameters for functions with path parameters
+            // No input parameters for routines with path parameters
 
             if ($8) {
                 procedure.output = driver.context().makeParameter("", std::string($8), makeLocation(driver, @8));
@@ -895,9 +950,10 @@ function_decl
                 delete body;
             }
 
+            procedure.isFunction = true;
             driver.context().addProcedure(std::move(procedure));
         }
-    | FUNCTION procedure_name '(' ')' ':' type_name procedure_body
+    | ROUTINE procedure_name '(' ')' ':' type_name procedure_body
         {
             trx::ast::ProcedureDecl procedure;
             auto procName = static_cast<trx::ast::ProcedureName*>($2);
@@ -920,62 +976,6 @@ function_decl
             }
 
             procedure.isFunction = true;
-            driver.context().addProcedure(std::move(procedure));
-        }
-    ;
-
-procedure_decl
-    : EXPORT procedure_config PROCEDURE procedure_name LPAREN input_type RPAREN procedure_body
-        {
-            trx::ast::ProcedureDecl procedure;
-            auto procName = static_cast<trx::ast::ProcedureName*>($4);
-            if (procName) {
-                procedure.name = std::move(*procName);
-                delete procName;
-            }
-            procedure.isExported = true;
-
-            if ($6) {
-                procedure.input = *static_cast<trx::ast::ParameterDecl*>($6);
-                delete static_cast<trx::ast::ParameterDecl*>($6);
-            }
-
-            // Apply configuration from procedure_config
-            auto config = static_cast<trx::ast::ProcedureConfig*>($2);
-            if (config) {
-                procedure.httpMethod = config->httpMethod;
-                procedure.httpHeaders = std::move(config->httpHeaders);
-                delete config;
-            }
-
-            auto body = statementListFrom($8);
-            if (body) {
-                procedure.body = std::move(*body);
-                delete body;
-            }
-
-            driver.context().addProcedure(std::move(procedure));
-        }
-    | PROCEDURE procedure_name LPAREN input_type RPAREN procedure_body
-        {
-            trx::ast::ProcedureDecl procedure;
-            auto procName = static_cast<trx::ast::ProcedureName*>($2);
-            if (procName) {
-                procedure.name = std::move(*procName);
-                delete procName;
-            }
-
-            if ($4) {
-                procedure.input = *static_cast<trx::ast::ParameterDecl*>($4);
-                delete static_cast<trx::ast::ParameterDecl*>($4);
-            }
-
-            auto body = statementListFrom($6);
-            if (body) {
-                procedure.body = std::move(*body);
-                delete body;
-            }
-
             driver.context().addProcedure(std::move(procedure));
         }
     ;

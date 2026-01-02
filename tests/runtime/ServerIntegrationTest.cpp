@@ -24,15 +24,15 @@ bool runServerIntegrationTest() {
     // For now, just test that we can parse the server test file
     // Full HTTP integration testing would require a more complex setup
     constexpr const char *source = R"TRX(
-        EXPORT METHOD GET FUNCTION get_user/{id: INTEGER}() : INTEGER {
+        EXPORT METHOD GET ROUTINE get_user/{id: INTEGER}() : INTEGER {
             RETURN id;
         }
 
-        EXPORT METHOD GET FUNCTION get_user_by_name/{name: CHAR}() : CHAR {
+        EXPORT METHOD GET ROUTINE get_user_by_name/{name: CHAR}() : CHAR {
             RETURN name;
         }
 
-        EXPORT METHOD POST FUNCTION create_user(user: JSON) : JSON {
+        EXPORT METHOD POST ROUTINE create_user(user: JSON) : JSON {
             RETURN user;
         }
     )TRX";

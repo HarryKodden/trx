@@ -124,13 +124,13 @@ bool runSqlStatementTests() {
             RESULT INTEGER;
         }
 
-        FUNCTION sql_examples(sample: SAMPLE): SAMPLE {
+        ROUTINE sql_examples(sample: SAMPLE): SAMPLE {
             EXEC SQL SELECT NAME FROM CUSTOMERS WHERE ID = :sample.VALUE;
             EXEC SQL DELETE FROM CUSTOMERS WHERE ID = :sample.VALUE;
             EXEC SQL UPDATE CUSTOMERS SET NAME = :sample.NAME WHERE ID = :sample.VALUE;
         }
 
-        FUNCTION cursor_examples(sample: SAMPLE): SAMPLE {
+        ROUTINE cursor_examples(sample: SAMPLE): SAMPLE {
             EXEC SQL DECLARE mycursor CURSOR FOR SELECT NAME, VALUE FROM CUSTOMERS WHERE ID = :sample.VALUE;
             EXEC SQL OPEN mycursor;
             EXEC SQL FETCH mycursor INTO :output.NAME, :output.RESULT;
