@@ -288,6 +288,12 @@ curl -X POST http://localhost:8080/process_employee \
   -d '{"ID": 1, "NAME": "John", "AGE": 30}'
 ```
 
+#### Swagger
+
+All **exported routines** (see below) are listed in the Swagger page that you can open in the browser:
+
+![TRX REST API Server](docs/assets/swagger.png)
+
 #### Exporting Routines
 
 By default, routines are not exposed via the REST API. To make a routine available as a web service, use the `EXPORT` keyword:

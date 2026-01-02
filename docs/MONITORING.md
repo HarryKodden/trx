@@ -50,6 +50,7 @@ docker compose up -d --build
 3. Navigate to **Dashboards** → **TRX Server Performance**
 4. The dashboard auto-refreshes every 5 seconds
 
+
 ## Available Metrics
 
 The TRX server exposes the following Prometheus metrics:
@@ -107,6 +108,8 @@ deriv(trx_average_duration_ms[10m])
 ```
 
 ## Dashboard Panels
+
+![TRX Server Performance Dashboard](assets/grafana-dashboard.png)
 
 The pre-configured "TRX Server Performance" dashboard includes:
 
