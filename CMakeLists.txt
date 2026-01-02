@@ -19,7 +19,7 @@ endif()
 
 # Packaging configuration
 set(CPACK_PACKAGE_NAME "trx")
-set(CPACK_PACKAGE_VERSION "1.0.1")
+set(CPACK_PACKAGE_VERSION "1.0.2")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "TRX - Transaction Processing Language")
 set(CPACK_PACKAGE_VENDOR "Harry Kodden")
 set(CPACK_PACKAGE_CONTACT "harry@kodden.nl")
