@@ -8,6 +8,7 @@ bool runCursorTest() {
     std::cout << "Running cursor test...\n";
     constexpr const char *source = R"TRX(
         ROUTINE test_json_list_from_cursor() : JSON {
+            EXEC SQL DROP TABLE IF EXISTS cursor_test_table;
             EXEC SQL CREATE TABLE cursor_test_table (
                 id INTEGER PRIMARY KEY,
                 name VARCHAR(50),
@@ -58,6 +59,7 @@ bool runCursorTest() {
         }
 
         ROUTINE test_cursor() {
+            EXEC SQL DROP TABLE IF EXISTS test_table;
             EXEC SQL CREATE TABLE test_table (
                 id INTEGER PRIMARY KEY,
                 name VARCHAR(50),

@@ -454,14 +454,14 @@ void yyerror(YYLTYPE *loc, trx::parsing::ParserDriver &driver, void *scanner, co
 %type <text> include_target
 %type <text> key
 %type <ptr> fields field_def
-%type <ptr> procedure_body block statement_list statement assignment_statement variable_declaration_statement throw_statement return_statement try_catch_statement if_statement else_clause while_statement for_statement switch_statement case_clauses case_clause default_clause sql_statement expression_statement arguments sql_chunks sql_chunk
+%type <ptr> routine_body block statement_list statement assignment_statement variable_declaration_statement throw_statement return_statement try_catch_statement if_statement else_clause while_statement for_statement switch_statement case_clauses case_clause default_clause sql_statement expression_statement arguments sql_chunks sql_chunk
 %type <ptr> format_decl
 %type <ptr> variable expression variable_reference
 %type <ptr> logical_or_expression logical_and_expression equality_expression relational_expression additive_expression multiplicative_expression unary_expression primary_expression builtin literal object_properties array_elements
 %type <number> dimension
-%type <ptr> procedure_config header_list
+%type <ptr> routine_config header_list
 %type <text> http_method header_name
-%type <ptr> procedure_name path_placeholders
+%type <ptr> routine_name path_placeholders
 
 %left OR
 %left AND
@@ -488,7 +488,6 @@ definition
     : include_decl
     | constant_decl
     | type_decl
-    | routine_decl
     | routine_decl
     | statement
       {
@@ -799,7 +798,7 @@ format_decl
     ;
 
 routine_decl
-    : EXPORT procedure_config ROUTINE procedure_name LPAREN input_type RPAREN procedure_body
+    : EXPORT routine_config ROUTINE routine_name LPAREN input_type RPAREN routine_body
         {
             trx::ast::ProcedureDecl procedure;
             auto procName = static_cast<trx::ast::ProcedureName*>($4);
@@ -814,7 +813,7 @@ routine_decl
                 delete static_cast<trx::ast::ParameterDecl*>($6);
             }
 
-            // Apply configuration from procedure_config
+            // Apply configuration from routine_config
             auto config = static_cast<trx::ast::ProcedureConfig*>($2);
             if (config) {
                 procedure.httpMethod = config->httpMethod;
@@ -831,7 +830,7 @@ routine_decl
             procedure.isFunction = false;
             driver.context().addProcedure(std::move(procedure));
         }
-    | ROUTINE procedure_name LPAREN input_type RPAREN procedure_body
+    | ROUTINE routine_name LPAREN input_type RPAREN routine_body
         {
             trx::ast::ProcedureDecl procedure;
             auto procName = static_cast<trx::ast::ProcedureName*>($2);
@@ -854,7 +853,7 @@ routine_decl
             procedure.isFunction = false;
             driver.context().addProcedure(std::move(procedure));
         }
-    | EXPORT procedure_config ROUTINE procedure_name LPAREN input_type RPAREN ':' type_name procedure_body
+    | EXPORT routine_config ROUTINE routine_name LPAREN input_type RPAREN ':' type_name routine_body
         {
             trx::ast::ProcedureDecl procedure;
             auto procName = static_cast<trx::ast::ProcedureName*>($4);
@@ -874,7 +873,7 @@ routine_decl
                 std::free($9);
             }
 
-            // Apply configuration from procedure_config
+            // Apply configuration from routine_config
             auto config = static_cast<trx::ast::ProcedureConfig*>($2);
             if (config) {
                 procedure.httpMethod = config->httpMethod;
@@ -891,7 +890,7 @@ routine_decl
             procedure.isFunction = true;
             driver.context().addProcedure(std::move(procedure));
         }
-    | ROUTINE procedure_name LPAREN input_type RPAREN ':' type_name procedure_body
+    | ROUTINE routine_name LPAREN input_type RPAREN ':' type_name routine_body
         {
             trx::ast::ProcedureDecl procedure;
             auto procName = static_cast<trx::ast::ProcedureName*>($2);
@@ -919,7 +918,7 @@ routine_decl
             procedure.isFunction = true;
             driver.context().addProcedure(std::move(procedure));
         }
-    | EXPORT procedure_config ROUTINE procedure_name '(' ')' ':' type_name procedure_body
+    | EXPORT routine_config ROUTINE routine_name '(' ')' ':' type_name routine_body
         {
             trx::ast::ProcedureDecl procedure;
             auto procName = static_cast<trx::ast::ProcedureName*>($4);
@@ -936,7 +935,7 @@ routine_decl
                 std::free($8);
             }
 
-            // Apply configuration from procedure_config
+            // Apply configuration from routine_config
             auto config = static_cast<trx::ast::ProcedureConfig*>($2);
             if (config) {
                 procedure.httpMethod = config->httpMethod;
@@ -953,7 +952,7 @@ routine_decl
             procedure.isFunction = true;
             driver.context().addProcedure(std::move(procedure));
         }
-    | ROUTINE procedure_name '(' ')' ':' type_name procedure_body
+    | ROUTINE routine_name '(' ')' ':' type_name routine_body
         {
             trx::ast::ProcedureDecl procedure;
             auto procName = static_cast<trx::ast::ProcedureName*>($2);
@@ -980,7 +979,7 @@ routine_decl
         }
     ;
 
-procedure_config
+routine_config
     : /* empty */
       {
           $$ = new trx::ast::ProcedureConfig();
@@ -1016,7 +1015,7 @@ procedure_config
       }
     ;
 
-procedure_name
+routine_name
     : identifier
       {
           auto procName = new trx::ast::ProcedureName();
@@ -1112,7 +1111,7 @@ header_name
       }
     ;
 
-procedure_body
+routine_body
         : block
             {
                     $$ = $1;

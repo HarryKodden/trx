@@ -68,6 +68,38 @@ void PostgreSQLDriver::initialize() {
 }
 
 void PostgreSQLDriver::executeSql(const std::string& sql, const std::vector<SqlParameter>& params) {
+    // Check transaction state and handle error conditions
+    PGTransactionStatusType txStatus = PQtransactionStatus(conn_);
+    
+    // Special handling for RELEASE SAVEPOINT when transaction is in error state
+    // In this case, we should actually ROLLBACK TO SAVEPOINT instead
+    bool isReleaseSavepoint = (sql.find("RELEASE SAVEPOINT") != std::string::npos);
+    if (txStatus == PQTRANS_INERROR && isReleaseSavepoint) {
+        // Convert RELEASE to ROLLBACK TO
+        size_t pos = sql.find("RELEASE SAVEPOINT");
+        std::string savepointName = sql.substr(pos + 17);  // "RELEASE SAVEPOINT" is 17 chars
+        // Trim leading space
+        size_t firstNonSpace = savepointName.find_first_not_of(" \t\n\r");
+        if (firstNonSpace != std::string::npos) {
+            savepointName = savepointName.substr(firstNonSpace);
+        }
+        std::string rollbackSql = "ROLLBACK TO SAVEPOINT " + savepointName;
+        PGresult* res = PQexec(conn_, rollbackSql.c_str());
+        if (!res || (PQresultStatus(res) != PGRES_COMMAND_OK)) {
+            std::string error = PQerrorMessage(conn_);
+            PQclear(res);
+            throw std::runtime_error("PostgreSQL ROLLBACK TO SAVEPOINT failed: " + error);
+        }
+        PQclear(res);
+        return;  // Done, don't execute the original RELEASE command
+    }
+    
+    // Note: We do NOT automatically ROLLBACK on PQTRANS_INERROR here!
+    // PostgreSQL transactions remain in error state until explicitly:
+    // 1. ROLLBACK TO SAVEPOINT (if using savepoints)
+    // 2. ROLLBACK (to end the transaction)
+    // The Interpreter's exception handling will decide which is appropriate.
+    
     // Convert ? placeholders to $1, $2, etc. for PostgreSQL
     std::string convertedSql = sql;
     size_t pos = 0;
@@ -212,36 +244,66 @@ std::vector<std::vector<SqlValue>> PostgreSQLDriver::querySql(const std::string&
 void PostgreSQLDriver::openCursor(const std::string& name, const std::string& sql, const std::vector<SqlParameter>& params) {
     closeCursor(name); // Close if already exists
 
+    // Check if SQL contains placeholders
+    bool hasPlaceholders = (sql.find('?') != std::string::npos);
+    
+    // Store the original SQL for potential reopening with different parameters
+    cursorSql_[name] = sql;
+    
+    // If there are placeholders but no parameters provided, don't execute yet
+    // This handles the pattern: DECLARE cursor ... WHERE x = ?; OPEN cursor USING :param;
+    if (hasPlaceholders && params.empty()) {
+        return;  // Just store the SQL, don't execute DECLARE yet
+    }
+    
+    // If we have parameters, substitute them into the query
     std::string query = sql;
-    // Replace ? with actual values for DECLARE
-    size_t paramIdx = 0;
-    size_t pos = 0;
-    while ((pos = query.find('?', pos)) != std::string::npos && paramIdx < params.size()) {
-        const auto& param = params[paramIdx++];
-        std::string value;
-        if (std::holds_alternative<std::string>(param.value.data)) {
-            value = std::get<std::string>(param.value.data);
-        } else if (std::holds_alternative<double>(param.value.data)) {
-            double num = std::get<double>(param.value.data);
-            if (num == static_cast<long long>(num)) {
-                value = std::to_string(static_cast<long long>(num));
+    if (!params.empty()) {
+        // Replace ? with actual values for DECLARE
+        size_t paramIdx = 0;
+        size_t pos = 0;
+        while ((pos = query.find('?', pos)) != std::string::npos && paramIdx < params.size()) {
+            const auto& param = params[paramIdx++];
+            std::string value;
+            if (std::holds_alternative<std::string>(param.value.data)) {
+                // Quote string values and escape single quotes
+                std::string str = std::get<std::string>(param.value.data);
+                std::string escaped;
+                for (char c : str) {
+                    if (c == '\'') {
+                        escaped += "''";  // Escape single quotes
+                    } else {
+                        escaped += c;
+                    }
+                }
+                value = "'" + escaped + "'";
+            } else if (std::holds_alternative<double>(param.value.data)) {
+                double num = std::get<double>(param.value.data);
+                if (num == static_cast<long long>(num)) {
+                    value = std::to_string(static_cast<long long>(num));
+                } else {
+                    value = std::to_string(num);
+                }
+            } else if (std::holds_alternative<bool>(param.value.data)) {
+                value = std::get<bool>(param.value.data) ? "TRUE" : "FALSE";
             } else {
-                value = std::to_string(num);
+                value = "NULL";
             }
-        } else if (std::holds_alternative<bool>(param.value.data)) {
-            value = std::get<bool>(param.value.data) ? "true" : "false";
-        } else {
-            value = "null";
+            query.replace(pos, 1, value);
+            pos += value.length();
         }
-        query.replace(pos, 1, value);
-        pos += value.length();
     }
 
     std::string declareSql = "DECLARE " + name + " CURSOR FOR " + query;
-    executeSql(declareSql);  // No params needed
     
-    // Store the original SQL for potential reopening
-    cursorSql_[name] = sql;
+    // Execute DECLARE directly without parameter binding
+    PGresult* res = PQexec(conn_, declareSql.c_str());
+    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+        std::string error = PQerrorMessage(conn_);
+        PQclear(res);
+        throw std::runtime_error("PostgreSQL openCursor failed: " + error);
+    }
+    PQclear(res);
     
     // In PostgreSQL, DECLARE ... CURSOR FOR ... automatically opens the cursor
     // No separate OPEN statement needed
@@ -249,13 +311,27 @@ void PostgreSQLDriver::openCursor(const std::string& name, const std::string& sq
 }
 
 void PostgreSQLDriver::openDeclaredCursor(const std::string& name) {
-    auto it = cursors_.find(name);
-    if (it == cursors_.end()) {
+    auto sqlIt = cursorSql_.find(name);
+    if (sqlIt != cursorSql_.end()) {
+        closeCursor(name);
+        // Note: sqlIt->second may contain ? placeholders, but for openDeclaredCursor
+        // without params, we should have already substituted them or it's an error
+        std::string declareSql = "DECLARE " + name + " CURSOR FOR " + sqlIt->second;
+        
+        // Execute DECLARE directly without parameter binding
+        PGresult* res = PQexec(conn_, declareSql.c_str());
+        if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+            std::string error = PQerrorMessage(conn_);
+            PQclear(res);
+            throw std::runtime_error("PostgreSQL openDeclaredCursor failed: " + error);
+        }
+        PQclear(res);
+        
+        // In PostgreSQL, DECLARE automatically opens the cursor
+        cursors_[name] = true;
+    } else {
         throw std::runtime_error("Cursor not declared: " + name);
     }
-    
-    // In PostgreSQL, DECLARE ... CURSOR FOR ... automatically opens the cursor
-    // No separate OPEN statement needed
 }
 
 void PostgreSQLDriver::openDeclaredCursorWithParams(const std::string& name, const std::vector<SqlParameter>& params) {
@@ -275,7 +351,17 @@ void PostgreSQLDriver::openDeclaredCursorWithParams(const std::string& name, con
         const auto& param = params[paramIdx++];
         std::string value;
         if (std::holds_alternative<std::string>(param.value.data)) {
-            value = std::get<std::string>(param.value.data);
+            // Quote string values and escape single quotes
+            std::string str = std::get<std::string>(param.value.data);
+            std::string escaped;
+            for (char c : str) {
+                if (c == '\'') {
+                    escaped += "''";  // Escape single quotes
+                } else {
+                    escaped += c;
+                }
+            }
+            value = "'" + escaped + "'";
         } else if (std::holds_alternative<double>(param.value.data)) {
             double num = std::get<double>(param.value.data);
             if (num == static_cast<long long>(num)) {
@@ -284,9 +370,9 @@ void PostgreSQLDriver::openDeclaredCursorWithParams(const std::string& name, con
                 value = std::to_string(num);
             }
         } else if (std::holds_alternative<bool>(param.value.data)) {
-            value = std::get<bool>(param.value.data) ? "true" : "false";
+            value = std::get<bool>(param.value.data) ? "TRUE" : "FALSE";
         } else {
-            value = "null";
+            value = "NULL";
         }
         query.replace(pos, 1, value);
         pos += value.length();
@@ -294,7 +380,17 @@ void PostgreSQLDriver::openDeclaredCursorWithParams(const std::string& name, con
     
     // Re-declare the cursor with new parameters
     std::string declareSql = "DECLARE " + name + " CURSOR FOR " + query;
-    executeSql(declareSql);
+    
+    // Execute DECLARE directly without parameter binding
+    PGresult* res = PQexec(conn_, declareSql.c_str());
+    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+        std::string error = PQerrorMessage(conn_);
+        PQclear(res);
+        throw std::runtime_error("PostgreSQL openDeclaredCursorWithParams failed: " + error);
+    }
+    PQclear(res);
+    
+    // In PostgreSQL, DECLARE automatically opens the cursor
     
     cursors_[name] = true;
 }

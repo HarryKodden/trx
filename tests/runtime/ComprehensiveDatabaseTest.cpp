@@ -13,6 +13,7 @@ bool runComprehensiveDatabaseTest() {
     constexpr const char *source = R"TRX(
         // Test table creation with various data types
         ROUTINE test_table_creation() {
+            EXEC SQL DROP TABLE IF EXISTS test_types;
             EXEC SQL CREATE TABLE test_types (
                 id INTEGER PRIMARY KEY,
                 name VARCHAR(100) NOT NULL,
@@ -23,6 +24,7 @@ bool runComprehensiveDatabaseTest() {
                 data BLOB
             );
 
+            EXEC SQL DROP TABLE IF EXISTS departments;
             EXEC SQL CREATE TABLE IF NOT EXISTS departments (
                 dept_id INTEGER PRIMARY KEY,
                 dept_name VARCHAR(50) UNIQUE NOT NULL,
@@ -30,6 +32,7 @@ bool runComprehensiveDatabaseTest() {
                 location VARCHAR(100)
             );
 
+            EXEC SQL DROP TABLE IF EXISTS employees;
             EXEC SQL CREATE TABLE employees (
                 emp_id INTEGER PRIMARY KEY,
                 first_name VARCHAR(50) NOT NULL,

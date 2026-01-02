@@ -11,13 +11,25 @@ namespace trx::runtime {
 namespace {
 
 // Helper function to check ODBC return codes
-void checkODBC(SQLRETURN ret, [[maybe_unused]] SQLHANDLE handle, [[maybe_unused]] SQLSMALLINT type, const std::string& operation) {
-
-    std::cout << "ODBC: " << ret << std::endl;
-    
+void checkODBC(SQLRETURN ret, SQLHANDLE handle, SQLSMALLINT type, const std::string& operation) {
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
+        // Get diagnostic information
+        SQLCHAR sqlState[6];
+        SQLINTEGER nativeError;
+        SQLCHAR messageText[SQL_MAX_MESSAGE_LENGTH];
+        SQLSMALLINT textLength;
+        
         std::stringstream ss;
         ss << "ODBC " << operation << " failed: SQL code " << ret;
+        
+        // Retrieve diagnostic records
+        SQLSMALLINT recNum = 1;
+        while (SQLGetDiagRec(type, handle, recNum, sqlState, &nativeError,
+                            messageText, sizeof(messageText), &textLength) == SQL_SUCCESS) {
+            ss << "\n  [" << sqlState << "] " << messageText;
+            recNum++;
+        }
+        
         throw std::runtime_error(ss.str());
     }
 }
@@ -36,6 +48,7 @@ ODBCDriver::~ODBCDriver() {
     }
     statements_.clear();
     cursorSql_.clear();
+    executed_.clear();
 
     if (connection_) {
         SQLDisconnect(connection_);
@@ -198,6 +211,19 @@ void ODBCDriver::openCursor(const std::string& name, const std::string& sql, con
         closeCursor(name);
     }
 
+    // Store the original SQL for potential reopening with different parameters
+    cursorSql_[name] = sql;
+    
+    // Check if SQL contains placeholders
+    bool hasPlaceholders = (sql.find('?') != std::string::npos);
+    
+    // If there are placeholders but no parameters provided, don't prepare/execute yet
+    // This handles the pattern: DECLARE cursor ... WHERE x = ?; OPEN cursor USING :param;
+    if (hasPlaceholders && params.empty()) {
+        executed_[name] = false;
+        return;  // Just store the SQL, don't prepare the statement yet
+    }
+
     SQLHSTMT stmt;
     SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, connection_, &stmt);
     checkODBC(ret, connection_, SQL_HANDLE_DBC, "SQLAllocHandle(STMT)");
@@ -207,34 +233,53 @@ void ODBCDriver::openCursor(const std::string& name, const std::string& sql, con
         ret = SQLPrepare(stmt, reinterpret_cast<SQLCHAR*>(const_cast<char*>(sql.c_str())), SQL_NTS);
         checkODBC(ret, stmt, SQL_HANDLE_STMT, "SQLPrepare");
 
+        // Store parameters to ensure lifetime during SQLExecute
+        ParamStorage& storage = paramStorage_[name];
+        storage.doubles.clear();
+        storage.strings.clear();
+        storage.bools.clear();
+        storage.indicators.clear();
+        
+        storage.doubles.reserve(params.size());
+        storage.strings.reserve(params.size());
+        storage.bools.reserve(params.size());
+        storage.indicators.reserve(params.size());
+
         // Bind parameters
         for (size_t i = 0; i < params.size(); ++i) {
             const auto& param = params[i];
-            SQLLEN indicator = SQL_NTS;
-
+            
             if (std::holds_alternative<double>(param.value.data)) {
                 double val = std::get<double>(param.value.data);
-                ret = SQLBindParameter(stmt, i + 1, SQL_PARAM_INPUT, SQL_C_DOUBLE, SQL_DOUBLE, 0, 0, &val, 0, &indicator);
+                storage.doubles.push_back(val);
+                storage.indicators.push_back(0);
+                ret = SQLBindParameter(stmt, i + 1, SQL_PARAM_INPUT, SQL_C_DOUBLE, SQL_DOUBLE, 0, 0, 
+                                     &storage.doubles.back(), 0, &storage.indicators.back());
             } else if (std::holds_alternative<std::string>(param.value.data)) {
                 const std::string& val = std::get<std::string>(param.value.data);
-                ret = SQLBindParameter(stmt, i + 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, val.size(), 0, 
-                                     const_cast<char*>(val.c_str()), val.size(), &indicator);
+                storage.strings.push_back(val);
+                storage.indicators.push_back(SQL_NTS);
+                ret = SQLBindParameter(stmt, i + 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 
+                                     val.size(), 0, 
+                                     const_cast<char*>(storage.strings.back().c_str()), 
+                                     storage.strings.back().size(), 
+                                     &storage.indicators.back());
             } else if (std::holds_alternative<bool>(param.value.data)) {
                 bool val = std::get<bool>(param.value.data);
-                ret = SQLBindParameter(stmt, i + 1, SQL_PARAM_INPUT, SQL_C_BIT, SQL_BIT, 0, 0, &val, 0, &indicator);
+                storage.bools.push_back(val ? 1 : 0);
+                storage.indicators.push_back(0);
+                ret = SQLBindParameter(stmt, i + 1, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, 
+                                     &storage.bools.back(), 0, &storage.indicators.back());
             } else {
-                indicator = SQL_NULL_DATA;
-                ret = SQLBindParameter(stmt, i + 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 0, 0, nullptr, 0, &indicator);
+                storage.indicators.push_back(SQL_NULL_DATA);
+                ret = SQLBindParameter(stmt, i + 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 0, 0, 
+                                     nullptr, 0, &storage.indicators.back());
             }
             checkODBC(ret, stmt, SQL_HANDLE_STMT, "SQLBindParameter");
         }
 
-        // Execute
-        ret = SQLExecute(stmt);
-        checkODBC(ret, stmt, SQL_HANDLE_STMT, "SQLExecute");
-
         statements_[name] = stmt;
-        cursorSql_[name] = sql; // Store SQL for reopening
+        executed_[name] = false;
 
     } catch (...) {
         SQLFreeHandle(SQL_HANDLE_STMT, stmt);
@@ -242,8 +287,13 @@ void ODBCDriver::openCursor(const std::string& name, const std::string& sql, con
     }
 }
 
-void ODBCDriver::openDeclaredCursor(const std::string& /*name*/) {
-    // ODBC doesn't need separate OPEN - cursor is opened when executed
+void ODBCDriver::openDeclaredCursor(const std::string& name) {
+    auto sqlIt = cursorSql_.find(name);
+    if (sqlIt != cursorSql_.end()) {
+        openCursor(name, sqlIt->second, {});
+    } else {
+        throw std::runtime_error("Cursor not declared: " + name);
+    }
 }
 
 void ODBCDriver::openDeclaredCursorWithParams(const std::string& name, const std::vector<SqlParameter>& params) {
@@ -251,6 +301,9 @@ void ODBCDriver::openDeclaredCursorWithParams(const std::string& name, const std
     if (sqlIt == cursorSql_.end()) {
         throw std::runtime_error("Cursor not declared with USING support: " + name);
     }
+    
+    // Copy the SQL before closeCursor
+    std::string sql = sqlIt->second;
     
     closeCursor(name);
     
@@ -260,36 +313,57 @@ void ODBCDriver::openDeclaredCursorWithParams(const std::string& name, const std
 
     try {
         // Prepare statement
-        ret = SQLPrepare(stmt, reinterpret_cast<SQLCHAR*>(const_cast<char*>(sqlIt->second.c_str())), SQL_NTS);
+        ret = SQLPrepare(stmt, reinterpret_cast<SQLCHAR*>(const_cast<char*>(sql.c_str())), SQL_NTS);
         checkODBC(ret, stmt, SQL_HANDLE_STMT, "SQLPrepare");
+
+        // Store parameters to ensure lifetime during SQLExecute
+        ParamStorage& storage = paramStorage_[name];
+        storage.doubles.clear();
+        storage.strings.clear();
+        storage.bools.clear();
+        storage.indicators.clear();
+        
+        storage.doubles.reserve(params.size());
+        storage.strings.reserve(params.size());
+        storage.bools.reserve(params.size());
+        storage.indicators.reserve(params.size());
 
         // Bind parameters
         for (size_t i = 0; i < params.size(); ++i) {
             const auto& param = params[i];
-            SQLLEN indicator = SQL_NTS;
-
+            
             if (std::holds_alternative<double>(param.value.data)) {
                 double val = std::get<double>(param.value.data);
-                ret = SQLBindParameter(stmt, i + 1, SQL_PARAM_INPUT, SQL_C_DOUBLE, SQL_DOUBLE, 0, 0, &val, 0, &indicator);
+                storage.doubles.push_back(val);
+                storage.indicators.push_back(0);
+                ret = SQLBindParameter(stmt, i + 1, SQL_PARAM_INPUT, SQL_C_DOUBLE, SQL_DOUBLE, 0, 0, 
+                                     &storage.doubles.back(), 0, &storage.indicators.back());
             } else if (std::holds_alternative<std::string>(param.value.data)) {
                 const std::string& val = std::get<std::string>(param.value.data);
-                ret = SQLBindParameter(stmt, i + 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, val.size(), 0, 
-                                     const_cast<char*>(val.c_str()), val.size(), &indicator);
+                storage.strings.push_back(val);
+                storage.indicators.push_back(SQL_NTS);
+                ret = SQLBindParameter(stmt, i + 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 
+                                     val.size(), 0, 
+                                     const_cast<char*>(storage.strings.back().c_str()), 
+                                     storage.strings.back().size(), 
+                                     &storage.indicators.back());
             } else if (std::holds_alternative<bool>(param.value.data)) {
                 bool val = std::get<bool>(param.value.data);
-                ret = SQLBindParameter(stmt, i + 1, SQL_PARAM_INPUT, SQL_C_BIT, SQL_BIT, 0, 0, &val, 0, &indicator);
+                storage.bools.push_back(val ? 1 : 0);
+                storage.indicators.push_back(0);
+                ret = SQLBindParameter(stmt, i + 1, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, 
+                                     &storage.bools.back(), 0, &storage.indicators.back());
             } else {
-                indicator = SQL_NULL_DATA;
-                ret = SQLBindParameter(stmt, i + 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 0, 0, nullptr, 0, &indicator);
+                storage.indicators.push_back(SQL_NULL_DATA);
+                ret = SQLBindParameter(stmt, i + 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 0, 0, 
+                                     nullptr, 0, &storage.indicators.back());
             }
             checkODBC(ret, stmt, SQL_HANDLE_STMT, "SQLBindParameter");
         }
 
-        // Execute
-        ret = SQLExecute(stmt);
-        checkODBC(ret, stmt, SQL_HANDLE_STMT, "SQLExecute");
-
+        // Don't execute here - let cursorNext() execute on first FETCH
         statements_[name] = stmt;
+        executed_[name] = false;
 
     } catch (...) {
         SQLFreeHandle(SQL_HANDLE_STMT, stmt);
@@ -301,6 +375,12 @@ bool ODBCDriver::cursorNext(const std::string& name) {
     auto it = statements_.find(name);
     if (it == statements_.end()) {
         throw std::runtime_error("Cursor not found: " + name);
+    }
+
+    if (!executed_[name]) {
+        SQLRETURN ret = SQLExecute(it->second);
+        checkODBC(ret, it->second, SQL_HANDLE_STMT, "SQLExecute");
+        executed_[name] = true;
     }
 
     SQLRETURN ret = SQLFetch(it->second);
@@ -352,6 +432,10 @@ void ODBCDriver::closeCursor(const std::string& name) {
         SQLFreeHandle(SQL_HANDLE_STMT, it->second);
         statements_.erase(it);
     }
+    executed_.erase(name);
+    // Don't erase cursorSql_ - we need it for reopening with OPEN USING
+    // cursorSql_.erase(name);
+    paramStorage_.erase(name);
 }
 
 void ODBCDriver::createOrMigrateTable(const std::string& tableName, const std::vector<TableColumn>& columns) {

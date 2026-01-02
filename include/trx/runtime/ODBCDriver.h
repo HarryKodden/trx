@@ -42,6 +42,16 @@ private:
     SQLHDBC connection_; // ODBC connection handle
     std::unordered_map<std::string, SQLHSTMT> statements_; // ODBC statement handles for cursors
     std::unordered_map<std::string, std::string> cursorSql_; // Store original cursor SQL
+    std::unordered_map<std::string, bool> executed_; // Track if cursor has been executed
+    
+    // Store parameter values to ensure lifetime during SQLExecute
+    struct ParamStorage {
+        std::vector<double> doubles;
+        std::vector<std::string> strings;
+        std::vector<long> bools;  // Store as 1/0 for PostgreSQL
+        std::vector<SQLLEN> indicators;
+    };
+    std::unordered_map<std::string, ParamStorage> paramStorage_;
 };
 
 } // namespace trx::runtime

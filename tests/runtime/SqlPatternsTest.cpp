@@ -9,6 +9,7 @@ bool runSqlPatternsTest() {
     constexpr const char *source = R"TRX(
         ROUTINE test_cursor_patterns() : JSON {
             // Create test table
+            EXEC SQL DROP TABLE IF EXISTS sqlpatternstest;
             EXEC SQL CREATE TABLE sqlpatternstest (
                 id INTEGER PRIMARY KEY,
                 name VARCHAR,
@@ -82,6 +83,7 @@ bool runSqlPatternsTest() {
             EXEC SQL CLOSE cursor3;
 
             // Test 4: Complex query with JOIN in cursor
+            EXEC SQL DROP TABLE IF EXISTS dept_test;
             EXEC SQL CREATE TABLE dept_test (
                 id INTEGER PRIMARY KEY,
                 name VARCHAR

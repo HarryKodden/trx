@@ -1101,9 +1101,15 @@ void executeSql(const trx::ast::SqlStatement &sqlStmt, ExecutionContext &context
                     debugPrint("SQL OPEN CURSOR WITH PARAMS failed: " + std::string(e.what()));
                 }
             } else {
-                // Regular OPEN cursor (already opened in declare)
-                context.interpreter.setSqlCode(0.0); // Success (no actual operation)
-                debugPrint("SQL OPEN CURSOR: " + sqlStmt.identifier);
+                // Regular OPEN cursor
+                try {
+                    context.interpreter.db().openDeclaredCursor(sqlStmt.identifier);
+                    context.interpreter.setSqlCode(0.0); // Success
+                    debugPrint("SQL OPEN CURSOR: " + sqlStmt.identifier);
+                } catch (const std::exception& e) {
+                    context.interpreter.setSqlCode(-1.0); // Error
+                    debugPrint("SQL OPEN CURSOR failed: " + std::string(e.what()));
+                }
             }
             break;
         }
